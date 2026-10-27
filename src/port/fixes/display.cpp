@@ -14,15 +14,9 @@ extern "C" int port_platform_screen_size(int *w, int *h);
 extern "C" int port_window_mode(void);   // port/options/display.cpp
 #endif
 
-extern "C" void port_display_fit(int *w, int *h)
+static void fit(bool full, int *w, int *h)
 {
 	if (*w <= 0 || *h <= 0) return;
-#ifdef ZOOSTERS_OPTIONS
-	bool full = port_window_mode() != 0;
-#else
-	const char *fs = getenv("PORT_FULLSCREEN");
-	bool full = fs && fs[0] == '1';
-#endif
 	int aw = 0, ah = 0, ww = 0, wh = 0, fx = 0, fy = 0;
 	if (full) {
 		if (!port_platform_screen_size(&aw, &ah) || aw <= 0 || ah <= 0) return;
@@ -45,3 +39,16 @@ extern "C" void port_display_fit(int *w, int *h)
 	}
 	*w = cw; *h = ch;
 }
+
+extern "C" void port_display_fit(int *w, int *h)
+{
+#ifdef ZOOSTERS_OPTIONS
+	fit(port_window_mode() != 0, w, h);
+#else
+	const char *fs = getenv("PORT_FULLSCREEN");
+	fit(fs && fs[0] == '1', w, h);
+#endif
+}
+
+// The windowed fit whatever the mode in force: the options switching to windowed (the mode changes after the fit).
+extern "C" void port_display_fit_windowed(int *w, int *h) { fit(false, w, h); }

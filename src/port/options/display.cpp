@@ -14,7 +14,7 @@ extern "C" int port_platform_apply_display(int mode, int w, int h);
 extern "C" int port_platform_desktop_size(int *w, int *h);
 extern "C" int port_platform_work_area(int *w, int *h, int *frameW, int *frameH);
 extern "C" int port_platform_client_size(int *w, int *h);
-extern "C" void port_display_fit(int *w, int *h);          // port/fixes/display.cpp
+extern "C" void port_display_fit_windowed(int *w, int *h); // port/fixes/display.cpp
 extern "C" void port_wide_settings_changed(void);          // port/fixes/widescreen.cpp
 extern "C" void port_display_size_changed(void);
 
@@ -106,7 +106,7 @@ void desktopFit(int mode, int *w, int *h)
 {
 	*w = *h = 0;
 	if (!port_platform_desktop_size(w, h)) { *w = *h = 0; return; }
-	if (mode == opt_display::MODE_WINDOWED) port_display_fit(w, h);   // as WinMain does for an unset resolution
+	if (mode == opt_display::MODE_WINDOWED) port_display_fit_windowed(w, h);   // as WinMain does for an unset resolution
 }
 
 bool applyNow()
