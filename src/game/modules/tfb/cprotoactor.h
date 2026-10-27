@@ -23,7 +23,7 @@ public:
 protected:
 	// members from +0x20 (the rest is HandleAttributes' business)
 	char m_unk1d[3];                                 // +0x1d the bases end here (CAttributeHandler 0x1c, empty CSystemCommands and LinearAllocationPolicy one byte each); unused
-	char m_attributes[0x114];                         // +0x20 attribute command 1 copies 0x114 B here (then into the actor +0x1ac)
+	alignas(4) char m_attributes[0x114];              // +0x20 attribute command 1 copies 0x114 B here (then into the actor +0x1ac); read as ActorParams, so aligned
 	int m_scriptGuid[4];                              // +0x134 RWSGUID of the script asset (command 3, PaResRef::GetGuid)
 	int m_scriptAsset;                                // +0x144 ScriptAssets_Add(m_scriptGuid) (index into g_scriptAssets; ctor -1)
 	RwMatrix m_frame;                                 // +0x148 the placement frame of system command 1 (identity in the ctor; pos +0x178 is the actor's origin)
