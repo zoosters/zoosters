@@ -1,10 +1,11 @@
 name: Build
 
+# main only gets commits already green on their task/ branch
 on:
   push:
-    branches: [main]
+    branches: ['task/**']
     tags: ['v*']
-  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   workflow_dispatch:
 
 permissions:
