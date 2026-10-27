@@ -1,0 +1,29 @@
+# Formatting of the clean tree: clang-format --style=file:src/game/.clang-format -i <files>
+# Format only the files you change; never mix a reformat with a logic change in one commit.
+BasedOnStyle: LLVM
+Standard: c++03
+UseTab: ForIndentation
+IndentWidth: 4
+TabWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 130
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterClass: false
+  AfterStruct: false
+  AfterEnum: false
+  AfterNamespace: false
+  AfterControlStatement: Never
+  BeforeElse: false
+  SplitEmptyFunction: false
+PointerAlignment: Right
+AccessModifierOffset: -4
+IndentCaseLabels: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+SortIncludes: Never
+ReflowComments: false
+Cpp11BracedListStyle: false
+SpacesBeforeTrailingComments: 1

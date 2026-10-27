@@ -1,0 +1,10 @@
+/build/
+/out/
+/deps/
+/vendor/*/
+!/vendor/librw/
+!/vendor/README.md
+CMakeUserPresets.json
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,4 @@
+[submodule "vendor/librw"]
+	path = vendor/librw
+	url = https://github.com/zoosters/librw.git
+	branch = zoosters

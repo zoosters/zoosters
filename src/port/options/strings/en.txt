@@ -1,0 +1,26 @@
+# In-game options strings (English), one NAME=text per line like Data\mdgdict.bnx. Served through the GetLocalizedString hook:
+# the name gets an id >= 0x10000 (opt_strings::Id), the game's own ids stay below. A missing name or file = the built-in English.
+OPT_TITLE=OPTIONS
+OPT_TITLE_ENTRY=Options
+OPT_MUSIC=Music Volume
+OPT_EFFECTS=Sound Volume
+OPT_VIBRATION=Vibration
+OPT_INVERTX=Invert Camera X
+OPT_INVERTY=Invert Camera Y
+OPT_SHADOWS=Detailed Shadows
+OPT_DISTANCE=Draw Distance
+OPT_BACK=Back
+OPT_ON=On
+OPT_OFF=Off
+OPT_FULL=Full
+OPT_DISPLAY=Display
+OPT_DISPLAY_TITLE=DISPLAY
+OPT_RESOLUTION=Resolution
+OPT_WINDOWMODE=Window Mode
+OPT_HUDSCALE=HUD Scale
+OPT_HUDWIDTH=HUD Width
+OPT_DESKTOP=Desktop
+OPT_WINDOWED=Windowed
+OPT_BORDERLESS=Borderless
+OPT_FULLSCREEN=Full Screen
+OPT_AUTO=Auto

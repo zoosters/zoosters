@@ -1,0 +1,116 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.preset }}${{ matrix.debugui && ' debug' || '' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: macos-arm64, os: macos-15 }
+          - { preset: linux-x64, os: ubuntu-24.04 }
+          - { preset: win-x64, os: windows-2022 }
+          - { preset: win-x86, os: windows-2022 }
+          # debug overlay (F1) and Studio (F9)
+          - { preset: macos-arm64, os: macos-15, debugui: true }
+          - { preset: linux-x64, os: ubuntu-24.04, debugui: true }
+          - { preset: win-x64, os: windows-2022, debugui: true }
+          - { preset: win-x86, os: windows-2022, debugui: true }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          repository: mdqinc/SDL_GameControllerDB
+          path: deps/gamecontrollerdb
+
+      # Only ninja: Homebrew's SDL3 and OpenAL Soft are built for the runner's macOS, the fetched ones for the deployment target
+      - name: Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      # SDL3 is fetched (these are its system headers); OpenAL Soft from apt: its source fails with clang 18 + libstdc++ 14
+      - name: Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang \
+            libgl-dev libegl-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev \
+            libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev \
+            libudev-dev libdbus-1-dev libpulse-dev libasound2-dev libpipewire-0.3-dev libopenal-dev
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DZOOSTERS_GAMECONTROLLERDB_DIR=deps/gamecontrollerdb -DZOOSTERS_DEBUGUI=${{ matrix.debugui && 'ON' || 'OFF' }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} ${{ runner.os != 'Windows' && '-- -k 0' || '' }}   # ninja: all errors in one run
+
+      - name: Package
+        run: |
+          shopt -s nullglob   # the win32-window builds have no gamecontrollerdb or SDL3 dll
+          name=Zoosters-${{ matrix.preset }}${{ matrix.debugui && '-debug' || '' }}
+          out=build/${{ matrix.preset }}
+          mkdir -p dist
+          case "${{ runner.os }}" in
+            macOS)
+              ditto -c -k --keepParent "$out/Zoosters.app" "dist/$name.zip" ;;
+            Linux)
+              mkdir -p "dist/$name"
+              cp -R "$out/zoosters" "$out"/lib*.so* "$out/Mod" "$out"/gamecontrollerdb* "dist/$name/"
+              cp LICENSE NOTICE.md "dist/$name/"
+              tar -C dist -czf "dist/$name.tar.gz" "$name"
+              rm -rf "dist/$name" ;;
+            Windows)
+              mkdir -p "dist/$name"
+              cp "$out/Release/zoosters.exe" "$out"/Release/*.dll "dist/$name/"
+              cp -R "$out/Release/Mod" "$out"/Release/gamecontrollerdb* "dist/$name/"
+              cp LICENSE NOTICE.md "dist/$name/"
+              (cd dist && 7z a -bd "$name.zip" "$name" > /dev/null)
+              rm -rf "dist/$name" ;;
+          esac
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zoosters-${{ matrix.preset }}${{ matrix.debugui && '-debug' || '' }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Zoosters-*
+          path: dist
+          merge-multiple: true
+
+      # A draft: it goes public only when published by hand
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft --generate-notes \
+            dist/Zoosters-macos-arm64.zip dist/Zoosters-linux-x64.tar.gz dist/Zoosters-win-x64.zip dist/Zoosters-win-x86.zip \
+            dist/Zoosters-macos-arm64-debug.zip dist/Zoosters-linux-x64-debug.tar.gz dist/Zoosters-win-x64-debug.zip \
+            dist/Zoosters-win-x86-debug.zip
