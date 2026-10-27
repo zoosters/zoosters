@@ -33,26 +33,6 @@ void TFBMatBody::Init()
 		Layer(i)->Init();
 }
 
-// Init has an exception frame in the game: it placement-news the sub-object with an inline constructor that may call an external function (never taken: m_unk04 was just cleared), which makes cl keep the frame and the placement delete unwind entry. A plain constructor gets no frame.
-inline void *operator new(size_t, char *place)
-{
-	return place;
-}
-inline void operator delete(void *, char *)
-{
-}
-void TFBLayerSub_MayThrow();
-struct TFBLayerSubCtor : public TFBLayerSub {
-	__forceinline TFBLayerSubCtor()
-	{
-		m_unk04 = 0;
-		m_unk08 = 0;
-		m_unk0c = 0;
-		if (m_unk04 != 0)
-			TFBLayerSub_MayThrow();
-	}
-};
-
 // Resets a layer: white, flags 0, no texture, a block of version 0x0F0F0001, bytes 2 and 5, no owned objects.
 // 0x45f140
 void TFBMatLayer::Init()
@@ -90,7 +70,9 @@ void TFBMatLayer::Init()
 	m_unk60[4] = 0;
 	m_unk20 = 2;
 	m_unk21 = 5;
-	new ((char *)&m_sub) TFBLayerSubCtor;
+	m_sub.m_unk04 = 0;
+	m_sub.m_unk08 = 0;
+	m_sub.m_unk0c = 0;
 	m_90 = 0;
 	m_94 = 0;
 }

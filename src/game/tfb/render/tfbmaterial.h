@@ -44,9 +44,9 @@ public:
 };
 ZOOSTERS_ASSERT_SIZE(TFBLayerBlock, 0x3c);
 
-// Four-int sub-object at layer +0x80 whose constructor the game gives an exception frame (see Init).
+// Four-int sub-object at layer +0x80.
 struct TFBLayerSub {
-	int m_unk00, m_unk04, m_unk08, m_unk0c;   // cleared by TFBLayerSubCtor; nothing reads them
+	int m_unk00, m_unk04, m_unk08, m_unk0c;   // TFBMatLayer::Init clears +4..+0xc; nothing reads them
 };
 
 // One of the four texture layers of a material (0x98 bytes).
