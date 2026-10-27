@@ -4,9 +4,7 @@
 // World queries walk the BSP (PortBspPlane nodes) and each reached sector's collision tree (plugin 0x11d, collTreeRead); sectors
 // without a tree are skipped, as in the game. Atomic queries use the geometry's tree (geomCollRead) for single morph target
 // geometries, a plain triangle walk without a tree, and interpolated triangles with several morph targets.
-//   PORT_BRUTECOLL=1      old brute force for world queries
-//   PORT_COLLCMP=1        run both per world query and compare the hit sets ("collcmp:" log lines)
-//   PORT_BRUTEATOM=1      force the plain atomic walk
+//   PORT_COLLCMP=1        run the tree walk and brute force per world query and compare the hit sets ("collcmp:" log lines)
 //   PORT_ATOMCMP=1        compare tree and plain walk per call
 //   PORT_ATOMLOG=1        log calls and callback sequences
 //   PORT_ATOMSELFTEST=1   random queries against every geometry with a tree
@@ -482,7 +480,7 @@ inline void collBoxNext(CollBoxIter *it, unsigned *start, unsigned *count, unsig
 // ---------------------------------------------------------------- atomic queries
 // The query is moved into the atomic's frame. More than one morph target: walk triangle by triangle through the interpolator
 // (TriLerp); otherwise the geometry's tree (plugin 0x11d, geomTree) drives the walk, and without one every triangle of morph target 0
-// is tested in index order. PORT_BRUTEATOM=1 forces the simple walk, PORT_ATOMCMP=1 compares both per call, PORT_ATOMLOG=1 logs each
+// is tested in index order. PORT_ATOMCMP=1 compares the tree and simple walks per call, PORT_ATOMLOG=1 logs each
 // call and callback sequence.
 int g_geomCollOffset = -1;                  // plugin offset of the geometry's PortCollTree* (RpCollisionPluginAttach)
 inline PortCollTree *geomTree(rw::Geometry *g) { return g_geomCollOffset < 0 ? 0 : *(PortCollTree **)((char *)g + g_geomCollOffset); }
@@ -533,8 +531,8 @@ inline void lerpInit(TriLerp *l, rw::Geometry *g, const PortInterp *ip)         
 }
 
 enum { PATH_TREE, PATH_SIMPLE, PATH_MORPH };
-static const bool g_atomBrute = getenv("PORT_BRUTEATOM") != 0, g_atomCmp = getenv("PORT_ATOMCMP") != 0, g_atomLog = getenv("PORT_ATOMLOG") != 0;
-inline int geomPath(rw::Geometry *g, int mode) { return g->numMorphTargets > 1 ? PATH_MORPH : ((mode == 0 && !g_atomBrute && geomTree(g)) ? PATH_TREE : PATH_SIMPLE); }
+static const bool g_atomCmp = getenv("PORT_ATOMCMP") != 0, g_atomLog = getenv("PORT_ATOMLOG") != 0;
+inline int geomPath(rw::Geometry *g, int mode) { return g->numMorphTargets > 1 ? PATH_MORPH : ((mode == 0 && geomTree(g)) ? PATH_TREE : PATH_SIMPLE); }
 static int g_atomTris;                      // triangles tested by the last atomic query (diagnostics)
 
 // line, in the frame of the atomic
@@ -985,8 +983,8 @@ extern "C" ShimWorld *RpCollisionWorldForAllIntersections(ShimWorld *w, void *in
 	if (logged < 3 && port_log) { logged++; fprintf(port_log, "collis: RpCollisionWorldForAllIntersections type %d (brute force over %d sectors)\n", is->type, w->numSectors); }
 	g_cSectors = g_cTris = g_cHits = 0;
 	struct Logger { Intersection *is; void *dp; ~Logger() { static int n; if (port_log && getenv("PORT_COLLLOG") && is->t.line.start.x > 3000.0f && is->t.line.start.x < 4500.0f && is->t.line.start.z > 6000.0f && n++ < 300) { fprintf(port_log, "collis: world query type %d: %.1f %.1f %.1f / %.1f %.1f %.1f -> sectors %d tris %d hits %d\n", is->type, is->t.line.start.x, is->t.line.start.y, is->t.line.start.z, is->t.line.end.x, is->t.line.end.y, is->t.line.end.z, g_cSectors, g_cTris, g_cHits); if (dp) { const float *q = (const float *)dp; fprintf(port_log, "collis:   probe data %p: t %.4f rem %.4f hit %.1f %.1f %.1f nrm %.3f %.3f %.3f corpus %p\n", dp, q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], *(void **)((const char *)dp + 0x70)); } } } } logger = { is, (is->type == 4 && port_readable_range(data, 0x80)) ? data : 0 };
-	static const bool brute = getenv("PORT_BRUTECOLL") != 0, cmp = getenv("PORT_COLLCMP") != 0;
-	const bool tree = !brute && w->bspRoot != 0;
+	static const bool cmp = getenv("PORT_COLLCMP") != 0;
+	const bool tree = w->bspRoot != 0;
 	Sphere s = { { 0, 0, 0 }, 0 };      // type 5: port_atomic_world_sphere = RpAtomicGetWorldBoundingSphere (radius scaled by the LTM, unlike librw's)
 	if (is->type == 3) s = is->t.sphere;
 	else if (is->type == 5) { const rw::Sphere *bs = port_atomic_world_sphere((rw::Atomic *)is->t.object); s.center.x = bs->center.x; s.center.y = bs->center.y; s.center.z = bs->center.z; s.radius = bs->radius; }

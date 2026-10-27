@@ -1,10 +1,8 @@
 // Scenery for the widescreen view (ZOOSTERS_WIDESCREEN). Sets that end just outside the original 4:3 frame show the clear colour at
 // wider aspects. CTFBWorld::RenderFrame draws the level's own worlds once more under the real pass, zoomed in; this decides when.
 #include <stdio.h>
-#include <stdlib.h>
 
 extern "C" FILE *port_log;
-extern "C" int port_widescreen(void);
 extern "C" void *RwCameraGetRaster(const void *cam);
 extern "C" int RwRasterGetWidth(const void *raster);
 extern "C" int RwRasterGetHeight(const void *raster);
@@ -17,8 +15,7 @@ enum { LEVEL_RAVE = 5, LEVEL_BANQUET = 7, LEVEL_RESCUE = 10, LEVEL_MAP = 14 };
 // it over the whole screen. Map: the ground, clouds and sky fade out or end beyond the frame the original showed.
 extern "C" float port_wide_underlay_zoom(void *camera)
 {
-	if (!port_widescreen() || (g_currentLevel != LEVEL_MAP && g_currentLevel != LEVEL_RAVE && g_currentLevel != LEVEL_BANQUET)) return 0.0f;
-	if (getenv("PORT_NO_UNDERLAY")) return 0.0f;   // before / after captures
+	if (g_currentLevel != LEVEL_MAP && g_currentLevel != LEVEL_RAVE && g_currentLevel != LEVEL_BANQUET) return 0.0f;
 	const void *r = RwCameraGetRaster(camera);
 	if (!r) return 0.0f;
 	int w = RwRasterGetWidth(r), h = RwRasterGetHeight(r);
@@ -30,7 +27,7 @@ extern "C" float port_wide_underlay_zoom(void *camera)
 // Rescue: the daytime sky card is a flat quad that ends inside the wider frame; clearing to its colour at the edge hides it
 extern "C" void port_wide_clear_color(void *camera, unsigned char *rgba)
 {
-	if (!port_widescreen() || g_currentLevel != LEVEL_RESCUE || getenv("PORT_NO_UNDERLAY")) return;
+	if (g_currentLevel != LEVEL_RESCUE) return;
 	const void *r = RwCameraGetRaster(camera);
 	if (!r) return;
 	int w = RwRasterGetWidth(r), h = RwRasterGetHeight(r);

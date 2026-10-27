@@ -78,13 +78,11 @@ bool haveArrows() { static int v = -1; if (v < 0) { float w, h; v = TextureSize(
 bool haveSliderArt() { static int v = -1; if (v < 0) { float w, h; v = TextureSize("SLIDERMARKS", &w, &h) && TextureSize("SLIDERMARKER", &w, &h); Log("slider art: %s", v ? "found" : "missing, plain bar"); } return v > 0; }
 bool haveSliderPlate() { static int v = -1; if (v < 0) { float w, h; v = TextureSize("SLIDER_BKDND", &w, &h); } return v > 0; }
 
-int mask() { static int m = -1; if (m < 0) { const char *e = getenv("PORT_OPTIONS_MASK"); m = e ? atoi(e) : 15; } return m; }
-
 float rowY(int r) { return kRow0 + kRowH * (float)r; }
 
 Sprite text(const char *s, float x, float y, int anchor, unsigned argb, float scale, bool fitted = false)
 {
-	if (g_textUsed >= kMaxText || !(mask() & 8)) return 0;
+	if (g_textUsed >= kMaxText) return 0;
 	int i = g_textUsed++;
 	if (argb != kTitle) argb = half(argb);   // kTitle is given as the tint itself
 	Sprite sp = g_text[i];
@@ -112,7 +110,6 @@ Sprite quadAt(int i, const char *tex, float x, float y, float w, float h, int an
 
 Sprite quad(const char *tex, float x, float y, float w, float h, int anchor, unsigned argb, int layer)
 {
-	if (!(mask() & (layer == kLayerFrame ? 1 : layer == kLayerBar ? 2 : 4))) return 0;
 	int i;
 	if (layer == kLayerFrame) { if (g_frameUsed >= kFrameQuads) return 0; i = kFrameQuad0 + g_frameUsed++; }
 	else if (layer == kLayerBar) { i = kBarQuad; g_barUsed = 1; }

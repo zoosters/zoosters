@@ -175,24 +175,22 @@ extern "C" int RwEngineStart(void)
 	rw::Image::registerFileFormat("bmp", rw::readBMP, rw::writeBMP);
 	rw::Image::registerFileFormat("png", rw::readPNG, rw::writePNG);
 	// _rwProcessorInitialize (device start) puts the x87 into single precision and, with SSE, sets MXCSR flush-to-zero (0x8000); the
-	// headless build has no D3D device to do it. PORT_NOFTZ=1 leaves the FPU alone. arm64: FPCR.FZ (bit 24) also flushes denormal
+	// headless build has no D3D device to do it. arm64: FPCR.FZ (bit 24) also flushes denormal
 	// inputs (x86 would need DAZ, which RW does not set); only denormals not from a flushed operation differ.
-	if (!getenv("PORT_NOFTZ")) {
 #if defined(__aarch64__)
-		uint64_t fpcr;
-		__asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-		fpcr |= (uint64_t)1 << 24;
-		__asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
-		CLOG("rwcore: FPU as RW's device start: arm64 flush-to-zero (fpcr %08llx)\n", (unsigned long long)fpcr);
+	uint64_t fpcr;
+	__asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+	fpcr |= (uint64_t)1 << 24;
+	__asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
+	CLOG("rwcore: FPU as RW's device start: arm64 flush-to-zero (fpcr %08llx)\n", (unsigned long long)fpcr);
 #elif defined(_WIN32)
-		_control87(_PC_24, _MCW_PC);
-		_mm_setcsr(_mm_getcsr() | 0x8000);
-		CLOG("rwcore: FPU as RW's device start: x87 single precision, SSE flush-to-zero (control %08x, mxcsr %08x)\n", _control87(0, 0), _mm_getcsr());
+	_control87(_PC_24, _MCW_PC);
+	_mm_setcsr(_mm_getcsr() | 0x8000);
+	CLOG("rwcore: FPU as RW's device start: x87 single precision, SSE flush-to-zero (control %08x, mxcsr %08x)\n", _control87(0, 0), _mm_getcsr());
 #else
-		_mm_setcsr(_mm_getcsr() | 0x8000);   // no _control87 here; x86-64 floats are SSE
-		CLOG("rwcore: FPU as RW's device start: SSE flush-to-zero (mxcsr %08x)\n", _mm_getcsr());
+	_mm_setcsr(_mm_getcsr() | 0x8000);   // no _control87 here; x86-64 floats are SSE
+	CLOG("rwcore: FPU as RW's device start: SSE flush-to-zero (mxcsr %08x)\n", _mm_getcsr());
 #endif
-	}
 	g_globals = port_engine_open();
 	((RwGlobalsShim *)g_globals)->renderFrame = 1;               // RW world module open: renderFrame = 1
 	g_engineState = 3;
@@ -1097,7 +1095,7 @@ extern "C" int RpClumpDestroy(rw::Clump *c)
 	return 1;
 }
 extern "C" rw::Atomic *RpAtomicClone(rw::Atomic *a) { PORT_HEAPCHK("RpAtomicClone"); return a->clone(); }
-extern "C" void _rwFrameSyncDirty(void) { PORT_HEAPCHK("_rwFrameSyncDirty"); static int n; if (n++ < 3) CLOG("rwcore: _rwFrameSyncDirty\n"); if (!getenv("PORT_NO_SYNCDIRTY")) rw::Frame::syncDirty(); }   // 0x4bfd30-ish: the game syncs dirty frames before its own LTM reads
+extern "C" void _rwFrameSyncDirty(void) { PORT_HEAPCHK("_rwFrameSyncDirty"); static int n; if (n++ < 3) CLOG("rwcore: _rwFrameSyncDirty\n"); rw::Frame::syncDirty(); }   // 0x4bfd30-ish: the game syncs dirty frames before its own LTM reads
 extern "C" rw::Camera *RpLODAtomicSetCamera(rw::Camera *c) { return c; }   // LOD plugin: the port renders every atomic at LOD 0
 extern "C" rw::Material *RpMaterialSetTexture(rw::Material *m, rw::Texture *t) { PORT_HEAPCHK("RpMaterialSetTexture"); if (m) m->setTexture(t); return m; }
 extern "C" rw::Texture *RpMaterialGetTexture(rw::Material *m) { return m ? m->texture : 0; }
@@ -1390,7 +1388,6 @@ extern "C" rw::HAnimHierarchy *RpHAnimHierarchyAttachFrameIndex(rw::HAnimHierarc
 static rw::HAnimHierarchy *mlimpl_RpHAnimHierarchyUpdateMatrices(rw::HAnimHierarchy *h)
 {
 	using namespace rw;
-	if (getenv("PORT_HANIMLIBRW")) { h->updateMatrices(); return h; }
 	const int32 fl = h->flags;
 	const bool noMat = (fl & HAnimHierarchy::NOMATRICES) != 0;
 	AnimInterpolator *anim = h->interpolator;

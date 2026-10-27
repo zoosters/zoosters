@@ -24,7 +24,7 @@ extern const RwV3d g_camAxisX, g_camAxisY, g_camAxisZ; // the unit axes (the cam
 extern RwV3d g_camLookAt;                                // the eye of the last update (read by the script's camera location)
 extern float g_frameDt;                                  // seconds of the last frame
 #ifdef ZOOSTERS_WIDESCREEN
-extern "C" int port_widescreen_view_window(void *camera, float zoom);   // port/fixes/widescreen.cpp (PORT_WIDESCREEN)
+extern "C" int port_widescreen_view_window(void *camera, float zoom);   // port/fixes/widescreen.cpp
 #endif
 
 int *CutScene_StackSlot(int delta);                   // 0x436c00

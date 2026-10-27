@@ -401,7 +401,6 @@ extern "C" RwInt32 RpWorldSectorRegisterPluginStream(RwUInt32 id, void *rd, void
 // the fallback for a sector without a stored mesh list. RW builds one mesh per material with triangles, ordered by SortPolygons
 // (transparent last, then raster, pipeline, texture, material index, with raster / pipeline / texture indices in order of first
 // appearance); librw makes one mesh per material in list order, which changed the draw order (sky: MILKYWAY before the moon).
-// PORT_LIBRWMESHORDER=1 keeps librw's order.
 struct SortMat { int mat, trans, rastIdx, texIdx, nIdx; };
 static int sortMatCmp(const void *a, const void *b)
 {
@@ -413,10 +412,8 @@ static int sortMatCmp(const void *a, const void *b)
 }
 static void rwSortSectorMeshes(rw::Geometry *g)
 {
-	static int keep = -1;
-	if (keep < 0) keep = getenv("PORT_LIBRWMESHORDER") != 0;
 	int nmat = g->matList.numMaterials, nt = g->numTriangles;
-	if (keep || nmat <= 0 || nt <= 0 || (g->flags & rw::Geometry::TRISTRIP)) return;
+	if (nmat <= 0 || nt <= 0 || (g->flags & rw::Geometry::TRISTRIP)) return;
 	SortMat *sm = (SortMat *)calloc(nmat, sizeof(SortMat));
 	rw::Texture **texSeen = (rw::Texture **)calloc(nmat, sizeof(void *)); rw::Raster **rastSeen = (rw::Raster **)calloc(nmat, sizeof(void *));
 	int *tIdx = (int *)malloc(nmat * sizeof(int)), *rIdx = (int *)malloc(nmat * sizeof(int));
@@ -468,18 +465,17 @@ static void rwSortSectorMeshes(rw::Geometry *g)
 // The sector's stored mesh list (rwID_BINMESHPLUGIN 0x50E): header {flags (1 = strips), numMeshes, totalIndices}, per mesh
 // {numIndices, matIndex} + 32-bit indices; RpWorldUnlock (0x4c0e70) then builds none. The stored order is the draw order, not
 // SortPolygons': level 10's hills draw ROCK_FLOOR, then the vertex-alpha ROCK_BOTM2 layer over the same vertices (sorted, the layer
-// came first and the opaque pass covered it). PORT_SORTMESHES=1 keeps the sorted meshes.
+// came first and the opaque pass covered it).
 // MatFX extension (rwID_MATERIALEFFECTSPLUGIN 0x120, one int32): RpMatFXWorldSectorEnableEffects (0x4a20c0) sets the MatFX sector
 // pipeline, which TFBSector_Render 0x4605a0 executes. Here the sector's librw atomic gets librw's MatFX pipeline so UV scroll
-// (patch 0027) and env maps draw. PORT_NOSECTORMATFX=1 ignores it.
+// (patch 0027) and env maps draw.
 static rw::Stream *readSectorMatFX(rw::Stream *s, rw::int32 len, void *obj, rw::int32, rw::int32)
 {
 	ShimSector *sec = (ShimSector *)obj;
 	rw::int32 on = 0;
 	if (len >= 4) { on = s->readI32(); len -= 4; }
 	if (len > 0) s->seek(len, 1);
-	static int off = getenv("PORT_NOSECTORMATFX") != 0;
-	if (on && sec->atomic && !off) rw::MatFX::enableEffects(sec->atomic);
+	if (on && sec->atomic) rw::MatFX::enableEffects(sec->atomic);
 	return s;
 }
 static rw::Stream *readSectorBinMesh(rw::Stream *s, rw::int32 len, void *obj, rw::int32, rw::int32)
@@ -487,7 +483,7 @@ static rw::Stream *readSectorBinMesh(rw::Stream *s, rw::int32 len, void *obj, rw
 	ShimSector *sec = (ShimSector *)obj;
 	rw::Geometry *g = sec->atomic ? sec->atomic->geometry : 0;
 	rw::uint32 hdr[3];
-	if (len < 12 || !g || getenv("PORT_SORTMESHES")) { s->seek(len, 1); return s; }
+	if (len < 12 || !g) { s->seek(len, 1); return s; }
 	s->read32(hdr, 12);
 	rw::uint32 nm = hdr[1], total = hdr[2], used = 12;
 	rw::uint32 *bm = (rw::uint32 *)malloc(nm * 8 + 8), *idx = (rw::uint32 *)malloc(total * 4 + 4), got = 0;
@@ -551,14 +547,11 @@ static ShimSector *readSector(rw::Stream *s, ShimWorld *w, int depth, void **nod
 	int ntex = (fmt >> 16) & 0xff;
 	if (ntex == 0 && (fmt & 0x84)) ntex = (fmt & 0x80) ? 2 : 1;
 	rw::uint32 consumed = 44;
-	static int noGeo = -1;
-	if (noGeo < 0) noGeo = getenv("PORT_NO_WORLDGEO") != 0;          // bisect switch: keep sectors without librw geometry
-	if (nv > 0 && !noGeo) {
+	if (nv > 0) {
 		unsigned gflags = (fmt & 0xfe) | rw::Geometry::POSITIONS | (ntex << 16);
 		// World-sector flags as stored (MODULATE kept): RW's D3D8 instancer multiplies prelit colour by the material colour when
 		// rpWORLDMODULATEMATERIALCOLOR is set and the texture stage does MODULATE2X (librw patch 0007), so moon / logo get tex *
-		// prelit * matcol * 2. PORT_SECTORNOMODULATE=1 drops MODULATE.
-		if (getenv("PORT_SECTORNOMODULATE")) gflags &= ~rw::Geometry::MODULATE;
+		// prelit * matcol * 2.
 		g_portInternalObjects++;
 		rw::Geometry *g = rw::Geometry::create(nv, nt, gflags);
 		g_portInternalObjects--;
@@ -706,8 +699,6 @@ static void *worldStreamRead(void *stream)
 		SHIMLOG("world:   material %d: texture %s raster %p color %02x%02x%02x%02x\n", i, m->texture ? m->texture->name : "(none)",
 		        m->texture ? (void *)m->texture->raster : 0, m->color.red, m->color.green, m->color.blue, m->color.alpha);
 	}
-	{ static const char *ma = getenv("PORT_MATALPHA0"); int ws, mi;   // bisect: "<world sectors>:<material>" -> that material's alpha 0 (invisible when blended)
-	  if (ma && sscanf(ma, "%d:%d", &ws, &mi) == 2 && ws == w->numSectors && mi < w->matlist.numMaterials) w->matlist.materials[mi]->color.alpha = 0; }
 	{ static const char *pd = getenv("PORT_PRELITDUMP"); if (pd && (*pd == '*' || w->numSectors == atoi(pd))) {   // diag: mean/min/max prelit colour per material (instanced geometry)
 		double sum[64][4] = {}; int cnt[64] = {}, mn[64][4], mx[64][4];
 		for (int k = 0; k < 64; k++) for (int c = 0; c < 4; c++) { mn[k][c] = 255; mx[k][c] = 0; }
@@ -768,49 +759,35 @@ extern "C" void port_camera_sync_sectors(rw::Camera *cam)
 	// RW WorldSyncCamera: walk the BSP from the root with the camera's frustumBoundBox; a plane sector descends into the children
 	// whose slab the box touches, in front-to-back or back-to-front order of the viewpoint against the plane value (renderOrder 2 =
 	// back to front); an atomic sector is listed when its cell box (+0x48) is not wholly outside one of the 6 frustum planes.
-	static const int noCull = getenv("PORT_NOFRUSTUMSECTORS") != 0, oldSectorList = getenv("PORT_STREAMSECTORORDER") != 0;
 	int culled = 0;
-	if (oldSectorList) {                                            // diag: the old behaviour, every sector in the port list order, cell-box frustum test only
-		for (ShimSector *sec = w->sectors; sec && e->position < e->space; sec = sec->next) {
+	const rw::V3d view = cam->getFrame()->getLTM()->pos;
+	const float inf[3] = { cam->frustumBoundBox.inf.x, cam->frustumBoundBox.inf.y, cam->frustumBoundBox.inf.z };
+	const float sup[3] = { cam->frustumBoundBox.sup.x, cam->frustumBoundBox.sup.y, cam->frustumBoundBox.sup.z };
+	const float eye[3] = { view.x, view.y, view.z };
+	const bool backToFront = w->renderOrder == 2;
+	void *stack[PORT_BSP_MAXDEPTH]; int nStack = 0;
+	void *cur = w->bspRoot;
+	for (;;) {
+		if (*(int *)cur < 0) {
+			ShimSector *sec = (ShimSector *)cur;
 			bool outside = false;
-			for (int i = 0; i < 6 && !noCull && !outside; i++) {
+			for (int i = 0; i < 6 && !outside; i++) {
 				const rw::FrustumPlane &fp = cam->frustumPlanes[i];
 				float x = fp.plane.normal.x < 0.0f ? sec->sup[0] : sec->inf[0], y = fp.plane.normal.y < 0.0f ? sec->sup[1] : sec->inf[1], z = fp.plane.normal.z < 0.0f ? sec->sup[2] : sec->inf[2];
 				outside = x * fp.plane.normal.x + y * fp.plane.normal.y + z * fp.plane.normal.z - fp.plane.distance > 0.0f;
 			}
-			if (outside) { culled++; continue; }
-			e->frustumSectors[e->position++] = sec;
-		}
-	} else {
-		const rw::V3d view = cam->getFrame()->getLTM()->pos;
-		const float inf[3] = { cam->frustumBoundBox.inf.x, cam->frustumBoundBox.inf.y, cam->frustumBoundBox.inf.z };
-		const float sup[3] = { cam->frustumBoundBox.sup.x, cam->frustumBoundBox.sup.y, cam->frustumBoundBox.sup.z };
-		const float eye[3] = { view.x, view.y, view.z };
-		const bool backToFront = w->renderOrder == 2;
-		void *stack[PORT_BSP_MAXDEPTH]; int nStack = 0;
-		void *cur = w->bspRoot;
-		for (;;) {
-			if (*(int *)cur < 0) {
-				ShimSector *sec = (ShimSector *)cur;
-				bool outside = false;
-				for (int i = 0; i < 6 && !noCull && !outside; i++) {
-					const rw::FrustumPlane &fp = cam->frustumPlanes[i];
-					float x = fp.plane.normal.x < 0.0f ? sec->sup[0] : sec->inf[0], y = fp.plane.normal.y < 0.0f ? sec->sup[1] : sec->inf[1], z = fp.plane.normal.z < 0.0f ? sec->sup[2] : sec->inf[2];
-					outside = x * fp.plane.normal.x + y * fp.plane.normal.y + z * fp.plane.normal.z - fp.plane.distance > 0.0f;
-				}
-				if (!outside) { if (e->position >= e->space) break; e->frustumSectors[e->position++] = sec; } else culled++;
-				if (nStack == 0) break;
-				cur = stack[--nStack];
-			} else {
-				PortBspPlane *pl = (PortBspPlane *)cur;
-				bool left = inf[pl->type >> 2] - pl->leftValue < 0.0f, right = pl->rightValue - sup[pl->type >> 2] < 0.0f;
-				if (left && right) {
-					bool higher = eye[pl->type >> 2] > pl->value;
-					bool leftFirst = (backToFront && higher) || !(backToFront || higher);
-					if (nStack >= PORT_BSP_MAXDEPTH) break;
-					cur = leftFirst ? pl->left : pl->right; stack[nStack++] = leftFirst ? pl->right : pl->left;
-				} else cur = left ? pl->left : pl->right;
-			}
+			if (!outside) { if (e->position >= e->space) break; e->frustumSectors[e->position++] = sec; } else culled++;
+			if (nStack == 0) break;
+			cur = stack[--nStack];
+		} else {
+			PortBspPlane *pl = (PortBspPlane *)cur;
+			bool left = inf[pl->type >> 2] - pl->leftValue < 0.0f, right = pl->rightValue - sup[pl->type >> 2] < 0.0f;
+			if (left && right) {
+				bool higher = eye[pl->type >> 2] > pl->value;
+				bool leftFirst = (backToFront && higher) || !(backToFront || higher);
+				if (nStack >= PORT_BSP_MAXDEPTH) break;
+				cur = leftFirst ? pl->left : pl->right; stack[nStack++] = leftFirst ? pl->right : pl->left;
+			} else cur = left ? pl->left : pl->right;
 		}
 	}
 	{ static int cl; if (cl < 8 && getenv("PORT_TIELOG")) { cl++; SHIMLOG("world: camera %p in world %p: %d sectors listed, %d outside the frustum\n", (void *)cam, (void *)w, e->position, culled); } }
@@ -888,31 +865,23 @@ static void attachAtomicSphere(ShimWorld *w, rw::Atomic *a)
 		a->rwSectors.add(&t->lWorldSectorInAtomic);
 		n++;
 	};
-	static const int oldTies = getenv("PORT_BOXTIES") != 0;          // diag: the earlier cell-box overlap loop (tight boxes)
-	if (oldTies) {
-		for (ShimSector *sec = w->sectors; sec; sec = sec->next) {
-			if (hi[0] < sec->tinf[0] || lo[0] > sec->tsup[0] || hi[1] < sec->tinf[1] || lo[1] > sec->tsup[1] || hi[2] < sec->tinf[2] || lo[2] > sec->tsup[2]) continue;
-			tieSector(sec);
-		}
-	} else {
-		// WorldAttachAtomicSphere: from the root, a plane sector goes left when the box's inf is below leftValue and ALSO right
-		// when rightValue is below the box's sup (the slabs overlap), the other child otherwise; every atomic sector reached gets a tie.
-		void *stack[PORT_BSP_MAXDEPTH]; int nStack = 0;
-		void *cur = w->bspRoot;
-		for (;;) {
-			if (*(int *)cur < 0) {
-				tieSector((ShimSector *)cur);
-				if (nStack == 0) break;
-				cur = stack[--nStack];
-			} else {
-				PortBspPlane *pl = (PortBspPlane *)cur;
-				int k = pl->type >> 2;
-				if (lo[k] < pl->leftValue) {
-					cur = pl->left;
-					if (pl->rightValue < hi[k] && nStack < PORT_BSP_MAXDEPTH) stack[nStack++] = pl->right;
-				} else if (pl->rightValue < hi[k]) cur = pl->right;
-				else { if (nStack == 0) break; cur = stack[--nStack]; }          // RW: "this case can occur although very unlikely"
-			}
+	// WorldAttachAtomicSphere: from the root, a plane sector goes left when the box's inf is below leftValue and ALSO right
+	// when rightValue is below the box's sup (the slabs overlap), the other child otherwise; every atomic sector reached gets a tie.
+	void *stack[PORT_BSP_MAXDEPTH]; int nStack = 0;
+	void *cur = w->bspRoot;
+	for (;;) {
+		if (*(int *)cur < 0) {
+			tieSector((ShimSector *)cur);
+			if (nStack == 0) break;
+			cur = stack[--nStack];
+		} else {
+			PortBspPlane *pl = (PortBspPlane *)cur;
+			int k = pl->type >> 2;
+			if (lo[k] < pl->leftValue) {
+				cur = pl->left;
+				if (pl->rightValue < hi[k] && nStack < PORT_BSP_MAXDEPTH) stack[nStack++] = pl->right;
+			} else if (pl->rightValue < hi[k]) cur = pl->right;
+			else { if (nStack == 0) break; cur = stack[--nStack]; }          // RW: "this case can occur although very unlikely"
 		}
 	}
 	g_tieAtomics++; if (!n) g_tieAtomicsNoSector++;
@@ -1048,13 +1017,6 @@ extern "C" void *RxPipelineExecute(void *pipe, void *object, int heap)
 	static int logged; if (logged < 6) { logged++; SHIMLOG("world: RxPipelineExecute(%p, %p) %s atomic %p\n", pipe, object, sec ? "sector" : "object", sec ? (void *)sec->atomic : 0); }
 	if (sec) {
 		if (sec->atomic) {
-			{ static const char *skip = getenv("PORT_SKIPWORLD"); if (skip && sec->world && sec->world->numSectors == atoi(skip)) return pipe; }   // bisect: skip a world by sector count
-			{   // bisect: PORT_ONETEX=<name>[,<name2>] puts that texture (alternating with name2 by material index) on every sector material
-				static const char *one = getenv("PORT_ONETEX");
-				static rw::Texture *t1, *t2; static int done;
-				if (one && !done) { char a[64] = "", b[64] = ""; sscanf(one, "%63[^,],%63s", a, b); t1 = port_find_texture(a); t2 = b[0] ? port_find_texture(b) : t1; done = 1; }
-				if (one && t1) { rw::Geometry *g = sec->atomic->geometry; for (int i = 0; i < g->matList.numMaterials; i++) g->matList.materials[i]->texture = (i & 1) ? t2 : t1; }
-			}
 			static int diagOn = getenv("PORT_DIAG") != 0;
 			static void *seen[16]; static int nseen, calls;
 			static void *pxWorld[16]; static int pxSum[16], pxN[16], pxFrame = -1;
@@ -1072,7 +1034,6 @@ extern "C" void *RxPipelineExecute(void *pipe, void *object, int heap)
 			}
 			if (want && getenv("PORT_DIAG2") && sec->world->numSectors == 26) { port_diag_draws = 14; SHIMLOG("diag: draws of the normal textured render of sector %p:\n", (void *)sec); }
 			if (want || occ) port_occ_begin();
-			{ static int noz = getenv("PORT_NOZTEST") != 0; if (noz) rw::SetRenderState(rw::ZTESTENABLE, 0); }   // bisect: depth test off for sectors
 			{ static const char *pd = getenv("PORT_PRELITDUMP");          // diag: the sector's geometry colours per material at draw time (trace frame)
 			  if (pd && port_trace_on() && (*pd == '*' || sec->world->numSectors == atoi(pd))) {
 				rw::Geometry *g = sec->atomic->geometry; double sm[64][4] = {}; int cn[64] = {};
@@ -1234,22 +1195,11 @@ extern "C++" rw::Texture *port_find_texture(const char *name)
 }
 // The game's PC texture dictionaries hold Xbox native textures (platform id 5 in every rwID_TEXTURENATIVE struct, although the
 // dictionary's device id says 8): librw reads them as Xbox rasters its d3d9 driver cannot bind, so they are converted through an image
-// into rasters of the running platform. Diagnostics: PORT_WHITETEX=1 opaque white texels everywhere; PORT_TINTTEX=<name> one solid
-// colour per mip level of that texture (0 magenta, 1 yellow, 2 cyan, 3 red, 4 green, 5+ blue).
-static void diagFill(rw::Image *img, const char *name, int level)
-{
-	static const char *tint = getenv("PORT_TINTTEX");
-	int white = getenv("PORT_WHITETEX") != 0, tinted = tint && !_stricmp(tint, name);
-	if (!white && !tinted) return;
-	img->unpalettize(); if (img->depth != 32) img->convertTo32();
-	static const rw::uint32 col[6] = { 0xffff00ff, 0xff00ffff, 0xffffff00, 0xff0000ff, 0xff00ff00, 0xffff0000 };   // RGBA bytes, little endian
-	rw::uint32 c = white ? 0xffffffff : col[level < 5 ? level : 5];
-	for (int y = 0; y < img->height; y++) for (int x = 0; x < img->width; x++) memcpy(img->pixels + y * img->stride + x * 4, &c, 4);
-}
+// into rasters of the running platform.
 static int convertForeignRaster(rw::Texture *tx)
 {
 	rw::Raster *r = tx ? tx->raster : 0;
-	if (!r || r->platform == rw::platform || rw::platform == rw::PLATFORM_NULL || getenv("PORT_NOCONVERT")) return 0;
+	if (!r || r->platform == rw::platform || rw::platform == rw::PLATFORM_NULL) return 0;
 	rw::Image *img = r->toImage();
 	if (!img) { SHIMLOG("rwshim: texture %s: platform %d raster has no image conversion\n", tx->name, r->platform); return 0; }
 	{
@@ -1266,13 +1216,10 @@ static int convertForeignRaster(rw::Texture *tx)
 	rw::int32 w, h, d, fmt;
 	rw::Raster::imageFindRasterFormat(img, rw::Raster::TEXTURE, &w, &h, &d, &fmt);
 // The dictionary's stored mip levels are carried over one by one (setFromImage alone fills level 0, leaving smaller levels empty and
-// aliasing when minified). PORT_NOMIPS=1: one-level conversion.
-	if (nlevels > 1 && !getenv("PORT_NOMIPS")) fmt |= r->format & rw::Raster::MIPMAP; else nlevels = 1;
-	if (getenv("PORT_AUTOMIPS") && (r->format & rw::Raster::MIPMAP)) { fmt |= rw::Raster::MIPMAP | rw::Raster::AUTOMIPMAP; nlevels = 1; }   // test: level 0 + generated mips
-	if (getenv("PORT_NOTEXALPHA")) fmt = (fmt & ~0xF00) | rw::Raster::C888;   // diagnostic: drop texture alpha
+// aliasing when minified).
+	if (nlevels > 1) fmt |= r->format & rw::Raster::MIPMAP; else nlevels = 1;
 	rw::Raster *nr = rw::Raster::create(w, h, d, fmt);
 	if (!nr) { img->destroy(); return 0; }
-	diagFill(img, tx->name, 0);
 	nr->setFromImage(img);
 	for (int i = 1; i < nlevels && i < nr->getNumLevels(); i++) {
 		r->lock(i, rw::Raster::LOCKREAD);
@@ -1286,7 +1233,6 @@ static int convertForeignRaster(rw::Texture *tx)
 			c->unpalettize(); if (c->depth != 32) c->convertTo32();
 			{ char native[1024]; rw::writePNG(c, PORT_NATIVE_PATH(path, native)); } c->destroy();
 		}
-		diagFill(li, tx->name, i);
 		nr->lock(i, rw::Raster::LOCKWRITE | rw::Raster::LOCKNOFETCH);
 		nr->setFromImage(li);
 		nr->unlock(i);
@@ -1295,7 +1241,7 @@ static int convertForeignRaster(rw::Texture *tx)
 	nr->cType = (rw::uint8)nr->type; nr->cFlags = (rw::uint8)(nr->flags & 0xf8); nr->cPrivateFlags = (rw::uint8)nr->privateFlags; nr->cFormat = (rw::uint8)(nr->format >> 8);   // RW 3.6 byte fields (rasterSyncBytes)
 	img->destroy();
 	tx->raster = nr;
-	if (!getenv("PORT_KEEPOLDRASTER")) r->destroy();
+	r->destroy();
 	return 1;
 }
 extern "C" void *RwTexDictionaryStreamRead(void *stream)

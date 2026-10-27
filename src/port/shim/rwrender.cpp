@@ -77,9 +77,8 @@ extern "C" int port_d3dcap_ndraw(void) { return -1; }   // headless build: no dr
 static bool g_fogGot; static float g_fogS, g_fogE;
 static void fogApply()
 {
-	if (!g_fogGot || getenv("PORT_NOFOGFIX")) return;
-	static const float mul = getenv("PORT_FOGMUL") ? (float)atof(getenv("PORT_FOGMUL")) : 1.0f;   // diagnostic: scale the fog distances
-	float s = g_fogS * mul, e = g_fogE * mul;
+	if (!g_fogGot) return;
+	float s = g_fogS, e = g_fogE;
 #ifdef RW_D3D9
 	rw::d3d::d3dShaderState.fogData.start = s; rw::d3d::d3dShaderState.fogData.end = e;
 	rw::d3d::d3dShaderState.fogData.range = s != e ? 1.0f / (s - e) : 0.0f;
@@ -104,7 +103,6 @@ extern "C" int port_RenderStateSet(int state, void *value)
 	if ((state == rwRS_CULLMODE || state == rwRS_ZTESTENABLE || state == rwRS_ZWRITEENABLE) && port_trace_on()) {   // PORT_TRACEFRAME: who changes cull / z, before which draw
 		RLOG("trace: RenderStateSet %d = %u caller %p before draw #%d\n", state, (unsigned)(uintptr_t)value, PORT_RETURN_ADDRESS(), port_d3dcap_ndraw());
 	}
-	{ static const char *ign = getenv("PORT_IGNORESTATE"); if (ign) { char k[16]; _snprintf(k, sizeof k, ",%d,", state); if (strstr(ign, k)) return 1; } }   // bisect: ",29,30," ignores those RW states
 	if (ls == rw::TEXTURERASTER) rw::SetRenderStatePtr(ls, value);
 #ifdef RW_D3D9
 	else if (ls == rw::ALPHATESTFUNC) rw::d3d::setAlphaTestFuncRW((unsigned)(uintptr_t)value);      // RW's eight functions (librw patch 0006)
@@ -152,11 +150,9 @@ extern "C" void FUN_004c80d0(void *cb)
 {
 	g_materialCB = (void *(*)(void *))cb;
 #ifdef RW_D3D9
-	static int off = getenv("PORT_NOMATCB") != 0;      // bisect: the game's material callback is not run
-	rw::d3d::meshMaterialHook = (g_materialCB && !off) ? materialHook : 0;
+	rw::d3d::meshMaterialHook = g_materialCB ? materialHook : 0;
 #elif defined(RW_GL3)
-	static int off = getenv("PORT_NOMATCB") != 0;
-	rw::gl3::meshMaterialHook = (g_materialCB && !off) ? materialHook : 0;     // librw patch 0018
+	rw::gl3::meshMaterialHook = g_materialCB ? materialHook : 0;     // librw patch 0018
 #endif
 }
 extern "C" int RwRenderStateSet(int state, void *value) { PORT_HEAPCHK("RwRenderStateSet"); return port_RenderStateSet(state, value); }
@@ -314,7 +310,6 @@ extern "C" int RwD3D8GetRenderState(int state, unsigned *value) { PORT_HEAPCHK("
 extern "C" int RwD3D8SetTextureStageState(int stage, int type, unsigned value)
 { PORT_HEAPCHK("RwD3D8SetTextureStageState");
 	if (!dev()) return 1;
-	{ static int off = getenv("PORT_NOTSS") != 0; if (off) return 1; }   // bisect: ignore the game's texture stage / sampler states
 	{   // log each distinct (stage, type, value) the game sets once
 		static unsigned seen[256]; static int ns;
 		unsigned key = ((unsigned)stage << 28) | ((unsigned)type << 20) | (value & 0xfffff);
@@ -870,7 +865,7 @@ static PortRecv *recvEntry(rw::Atomic *a)
 }
 extern "C" void port_pipe_run_custom(const void *pipe, void *sector, rw::Atomic *atomic)
 {
-	void *cb = port_pipe_custom_cb(pipe); if (!cb || !atomic || !dev() || getenv("PORT_NORECV")) return;
+	void *cb = port_pipe_custom_cb(pipe); if (!cb || !atomic || !dev()) return;
 	PortRecv *r = recvEntry(atomic); if (!r) return;
 	rw::Camera *cam = rw::engine->currentCamera; if (!cam) return;
 	static const float ident[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
@@ -926,7 +921,7 @@ static PortRecvGL *recvEntryGL(rw::Atomic *a)
 }
 extern "C" void port_pipe_run_custom(const void *pipe, void *sector, rw::Atomic *atomic)
 {
-	void *cb = port_pipe_custom_cb(pipe); if (!cb || !atomic || getenv("PORT_NORECV")) return;
+	void *cb = port_pipe_custom_cb(pipe); if (!cb || !atomic) return;
 	PortRecvGL *r = recvEntryGL(atomic); if (!r) return;
 	((void (*)(void *, void *, unsigned char, unsigned))cb)(r->entry, sector, 1, 0);
 	static int n; if (n++ < 3) RLOG("rwrender: receiver callback %p ran for sector %p (%d meshes, gl3)\n", cb, sector, (int)r->entry->numMeshes);

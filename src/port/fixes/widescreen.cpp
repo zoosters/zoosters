@@ -1,4 +1,4 @@
-// Widescreen (--tier qol defines ZOOSTERS_WIDESCREEN). On by default there; PORT_WIDESCREEN=0 turns it off at run time. The
+// Widescreen (--tier qol defines ZOOSTERS_WIDESCREEN). The
 // game's CameraHelper::SetFieldOfView (0x44ea40) keeps the horizontal field of view (view window x = tan(fov / 2)) and takes the
 // vertical one from a fixed 640 x 448 frame (y = 0.7 * x), whatever the screen: 7% too tall at 4:3, 1.24x too wide at 16:9. Hor+
 // with 4:3 as the reference: y = 0.75 * x, and x follows the camera's raster (x = y * width / height). At 4:3 the horizontal
@@ -13,16 +13,6 @@ extern "C" int RwRasterGetHeight(const void *raster);
 extern "C" void *RwCameraSetViewWindow(void *cam, const PortV2 *vw);
 extern "C" FILE *port_log;
 
-extern "C" int port_widescreen(void)
-{
-	static int on = -1;
-	if (on < 0) {
-		const char *e = getenv("PORT_WIDESCREEN");
-		on = !(e && e[0] == '0');
-		if (port_log) fprintf(port_log, "widescreen: PORT_WIDESCREEN %s\n", on ? "on (Hor+)" : "off (the game's projection)");
-	}
-	return on;
-}
 
 // ---- Resolution. The game starts at its registry value Settings\\Display\\Resolution, "800x600" when there is none. Unset here
 // = follow the desktop's mode (never written back); a stored value is an explicit override, used as is. Called by WinMain with
@@ -38,11 +28,6 @@ extern "C" void port_wide_resolution(int *w, int *h)
 	port_platform_dpi_aware();   // physical pixels for the queries below and for the window
 	if (*w > 0 && *h > 0) {
 		if (port_log) fprintf(port_log, "widescreen: resolution %dx%d (stored value)\n", *w, *h);
-		return;
-	}
-	if (!port_widescreen()) {
-		*w = 800; *h = 600;
-		if (port_log) fprintf(port_log, "widescreen: resolution 800x600 (PORT_WIDESCREEN=0, the game's default)\n");
 		return;
 	}
 	int dw = 0, dh = 0;
@@ -63,7 +48,6 @@ extern "C" void port_wide_resolution(int *w, int *h)
 // Called by GameCamera::UpdateGameCamera right after the game's SetFieldOfView(zoom, camera); returns 1 when it replaced the view window.
 extern "C" int port_widescreen_view_window(void *camera, float zoom)
 {
-	if (!port_widescreen()) return 0;
 	const void *r = RwCameraGetRaster(camera);
 	if (!r) return 0;
 	int w = RwRasterGetWidth(r), h = RwRasterGetHeight(r);
@@ -167,7 +151,7 @@ static float EdgeShift(float W, float H, float kk, int right)
 static void MapBase(float W, float H, float *k, float *s)
 {
 	*k = 1.0f; *s = 0.0f;
-	if (!port_widescreen() || W <= 0.0f || H <= 0.0f || g_wideMode == WIDE_STRETCH) return;
+	if (W <= 0.0f || H <= 0.0f || g_wideMode == WIDE_STRETCH) return;
 	float kk = 4.0f * H / (3.0f * W);
 	if (kk >= 1.0f) return;
 	*k = kk;
@@ -186,14 +170,14 @@ static void ScaleX(float H, float *k, float *s)
 extern "C" void port_wide2d_map(float W, float H, float *k, float *s)
 {
 	MapBase(W, H, k, s);
-	if (port_widescreen() && W > 0.0f && H > 0.0f)
+	if (W > 0.0f && H > 0.0f)
 		ScaleX(H, k, s);
 }
 // y of the current element: pixel = H (v ky + cy) for the grid's v = y / 480 (y down); 1 and 0 unless the element is scaled.
 extern "C" void port_wide2d_map_y(float H, float *ky, float *cy)
 {
 	*ky = 1.0f; *cy = 0.0f;
-	if (!port_widescreen() || !g_scaleThis || H <= 0.0f) return;
+	if (!g_scaleThis || H <= 0.0f) return;
 	float S = HudScale(H);
 	*ky = S;
 	*cy = g_anchorY * (1.0f - S);
@@ -339,7 +323,6 @@ extern "C" void port_wide2d_sprite(const char *name, float left, float width, fl
 	g_spriteLeft = left; g_spriteWidth = width;
 	g_logName = name;
 	g_logBox[0] = left; g_logBox[1] = width; g_logBox[2] = top; g_logBox[3] = height;
-	if (!port_widescreen()) return;
 	if (name) {
 		if (isMenuSprite(name)) g_menuSeen = g_menuActive = 1;
 		if (strcmp(name, "bx_MousePointer") == 0) return;
@@ -379,7 +362,7 @@ extern "C" void port_wide2d_reset(void) { g_wideMode = WIDE_CENTER; g_scaleThis 
 // it sits next to. x and w in pixels, in and out.
 extern "C" void port_wide2d_rect(float W, float H, float *x, float *w)
 {
-	if (!port_widescreen() || W <= 0.0f) return;
+	if (W <= 0.0f) return;
 	int saved = g_wideMode, savedScale = g_scaleThis;
 	float left = *x * 640.0f / W, width = *w * 640.0f / W;
 	port_wide2d_sprite(0, left, width, 0.0f, 0.0f);   // no height: not HUD-scaled (the radar's y is the game's)
