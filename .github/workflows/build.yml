@@ -64,7 +64,7 @@ jobs:
 
       - name: Package
         run: |
-          shopt -s nullglob   # the win32-window builds have no gamecontrollerdb or SDL3 dll
+          shopt -s nullglob   # gamecontrollerdb only when ZOOSTERS_GAMECONTROLLERDB_DIR is given
           name=Zoosters-${{ matrix.preset }}${{ matrix.debugui && '-debug' || '' }}
           out=build/${{ matrix.preset }}
           mkdir -p dist

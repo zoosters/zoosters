@@ -32,7 +32,7 @@ function(zoosters_runtime_files target)
     add_custom_command(TARGET ${target} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:SDL3::SDL3>" "${dir}/$<TARGET_SONAME_FILE_NAME:SDL3::SDL3>" VERBATIM)
   endif()
-  if(ZOOSTERS_GAMECONTROLLERDB_DIR AND ZOOSTERS_WINDOW STREQUAL "sdl")
+  if(ZOOSTERS_GAMECONTROLLERDB_DIR AND ZOOSTERS_NEEDS_SDL3)
     cmake_path(ABSOLUTE_PATH ZOOSTERS_GAMECONTROLLERDB_DIR BASE_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE gcdb)
     add_custom_command(TARGET ${target} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${gcdb}/gamecontrollerdb.txt" "${dir}/gamecontrollerdb.txt"

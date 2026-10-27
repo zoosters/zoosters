@@ -1,4 +1,4 @@
-// No game controllers for the builds without SDL: port_gamepad_init returns 0, so dinput_port.cpp offers no pad.
+// No game controllers for the headless build: port_gamepad_init returns 0, so dinput_port.cpp offers no pad.
 #include <string.h>
 #include "framework/startup/win32/input/dinput.h"
 

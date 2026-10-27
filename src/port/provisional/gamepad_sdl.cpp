@@ -1,4 +1,6 @@
 // Game controllers through SDL3's gamepad API, for dinput_port.cpp. The game sees one pad (slot 0): the first connected SDL gamepad at each poll, so a pad plugged in later works too.
+// With the SDL window its event loop (PumpMessages) updates the pads; with the win32 window nothing reads SDL's events, so they are
+// off and every poll updates the pads itself (SDL_UpdateGamepads, also what notices a pad plugged in or out).
 // gamecontrollerdb.txt next to the exe (macOS bundle: Contents/Resources) adds the community mappings.
 // The state is laid out as the Logitech RumblePad 2 / Dual Action that the launcher's preset 0 was written for (the bindings:
 // src/game/framework/startup/win32/input/controls.cpp kPortPadPreset):
@@ -36,6 +38,11 @@ static bool up(void)
 		if (port_log) fprintf(port_log, "gamepad: SDL gamepad subsystem failed: %s\n", SDL_GetError());
 		return false;
 	}
+#ifndef PORT_WINDOW_SDL
+	SDL_SetJoystickEventsEnabled(false);
+	SDL_SetGamepadEventsEnabled(false);
+	SDL_UpdateGamepads();
+#endif
 	const char *base = SDL_GetBasePath();
 	char path[1024];
 	snprintf(path, sizeof path, "%sgamecontrollerdb.txt", base ? base : "");
@@ -139,6 +146,9 @@ extern "C" int port_gamepad_state(DIJOYSTATE2 *s)
 	memset(s, 0, sizeof *s);
 	for (int i = 0; i < 4; i++)
 		s->rgdwPOV[i] = 0xffffffffu;
+#ifndef PORT_WINDOW_SDL
+	if (up()) SDL_UpdateGamepads();
+#endif
 	SDL_Gamepad *p = pad();
 	if (!p)
 		return 0;

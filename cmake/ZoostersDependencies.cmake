@@ -1,4 +1,4 @@
-# Third-party dependencies: SDL3 (window, input, OS layer; linked) and OpenAL Soft (sound; never linked, loaded at run time from
+# Third-party dependencies: SDL3 (window, input, OS layer, game controllers; linked) and OpenAL Soft (sound; never linked, loaded at run time from
 # next to the executable, so it is only located here to be copied there). An installed package is used when found, else the
 # release is fetched and built.
 include(FetchContent)
@@ -6,8 +6,10 @@ include(FetchContent)
 set(ZOOSTERS_SDL3_TAG "release-3.4.18" CACHE STRING "SDL3 release fetched when no installed SDL3 is found")
 set(ZOOSTERS_OPENAL_TAG "1.25.2" CACHE STRING "OpenAL Soft release fetched when no installed OpenAL Soft is found")
 
+# Every build with a window reads game controllers through SDL3's gamepad API (port/provisional/gamepad_sdl.cpp), the win32
+# window too; only the headless one goes without.
 set(ZOOSTERS_NEEDS_SDL3 OFF)
-if(ZOOSTERS_WINDOW STREQUAL "sdl" OR ZOOSTERS_OS STREQUAL "sdl")
+if(ZOOSTERS_WINDOW STREQUAL "sdl" OR ZOOSTERS_OS STREQUAL "sdl" OR NOT ZOOSTERS_PLATFORM STREQUAL "null")
   set(ZOOSTERS_NEEDS_SDL3 ON)
 endif()
 
