@@ -104,7 +104,8 @@ RwaStream *RWS::RwsAudio::GetStream(int index)
 // 0x44ae20
 RwBool RWS::RwsAudio::RegisterAudioObjects()
 {
-	g_audioCore = _rwaCoreOpen(&RwEngineGlobals()->memoryFuncs, 1);
+	// no engine block yet; the shim ignores the argument
+	g_audioCore = _rwaCoreOpen(RwEngineInstance ? &RwEngineGlobals()->memoryFuncs : 0, 1);
 	RwBool ok;
 	if (g_audioCore) {
 		RwaCoreRegisterDefaultObjects();
