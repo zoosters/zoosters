@@ -6,6 +6,8 @@
 #include <string.h>
 #include "binkdec.h"
 #include "tfb/level/bink.h"
+#include "framework/startup/win32/appstate.h"   // g_quitRequested
+#include "framework/startup/win32/platform.h"   // PumpMessages
 #include "../os/native_path.h"
 #include "../shim/rwaudio_al.h"
 
@@ -196,11 +198,18 @@ void __stdcall BinkDoFrame(BINK *b)
 	pumpSound(m);
 }
 
+// The game's movie loop (PlayVideo) runs until the movie ends without returning to the main loop, which pumps the window messages:
+// the original's DirectInput read the devices without them, the port's input arrives through them (raw mouse, SDL keyboard and pads;
+// the win32 keyboard only while the window is in front, which Windows takes away from a window that stops reading messages). So the
+// messages are pumped once per movie frame, after it is shown and before the game reads the skip button; a closed window ends the
+// movie (Video_Step closes it on ReadError).
 void __stdcall BinkNextFrame(BINK *b)
 {
 	if (!b) return;
 	b->LastFrameNum = b->FrameNum;
 	if (b->FrameNum < b->Frames) b->FrameNum++;
+	PumpMessages();
+	if (g_quitRequested) b->ReadError = 1;
 }
 
 // The game passes 0x80000003 only (32-bit B, G, R, A, the D3D8 camera-texture format). The port's raster is what the renderer makes
