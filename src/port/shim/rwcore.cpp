@@ -881,10 +881,12 @@ extern "C" RwRasterS *RwCameraGetZRaster(const RwCameraS *cam) { PORT_HEAPCHK("R
 extern "C" int RwRasterGetWidth(const RwRasterS *r) { return r->width; }
 extern "C" int RwRasterGetHeight(const RwRasterS *r) { return r->height; }
 extern "C" int RwRasterGetDepth(const RwRasterS *r) { return r->depth; }
-#ifdef RW_GL3
+#if defined(RW_GL3) || defined(RW_D3D9)
 // Display change at run time (port/options/display.cpp): the camera's frame and Z rasters take the new window size, in place (other
 // cameras share them: the sprite manager's). A gl3 CAMERA raster is the default framebuffer, so its size is only bookkeeping (the
-// viewport comes from the window); the Z raster's texture keeps its old size and is not used with the default framebuffer.
+// viewport comes from the window); the Z raster's texture keeps its old size and is not used with the default framebuffer. On d3d9
+// both are the device's own surfaces: librw resets the device to the client size at the next camera update and recreates the
+// default depth surface with it.
 extern "C" int port_camera_resize(RwCameraS *cam, int w, int h)
 {
 	if (!cam || !cam->frameBuffer || w <= 0 || h <= 0) return 0;

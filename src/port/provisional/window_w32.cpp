@@ -1,6 +1,7 @@
 // CreateGameWindow (0x519f00) for the windowed build (RegisterClassExA with the icon, WS_POPUP full screen or a centred bordered
 // window, CreateWindowExA, g_mainWnd), plus the harness side: a watchdog thread that closes the window after N presented frames.
-// Deviation: the port forces a bordered window unless PORT_FULLSCREEN=1 (the game is always full screen on the PC).
+// Deviation: the window starts bordered and takes the window mode of the options (windowed, borderless, exclusive) from there;
+// without the options only PORT_FULLSCREEN=1 makes it full screen (the game is always full screen on the PC).
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,9 +46,12 @@ static void rawMouse(const RAWMOUSE &m)
 extern "C" int port_real_input_allowed(void);   // mouse.cpp: false in scripted runs (PORT_INPUT / PORT_KEYS / PORT_MOUSE)
 #ifdef ZOOSTERS_OPTIONS
 extern "C" void port_window_toggle_fullscreen(void);   // port/options/display.cpp
+extern "C" int port_window_mode(void);                 // port/options/display.cpp: 0 windowed, 1 borderless, 2 exclusive full screen
 #endif
+static void exclusiveFocus(bool active);
 static LRESULT CALLBACK portWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
+	if (msg == WM_ACTIVATEAPP) exclusiveFocus(wp != 0);   // the game sees it too
 	if (((msg >= WM_KEYFIRST && msg <= WM_KEYLAST) || (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST)) && !port_real_input_allowed())
 		return DefWindowProcA(hwnd, msg, wp, lp);   // a scripted run gets no real keyboard / mouse messages (someone using the PC)
 #ifdef ZOOSTERS_OPTIONS
@@ -73,6 +77,18 @@ static LRESULT CALLBACK portWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
 // ---- window metrics for the resolution policy (widescreen.cpp port_wide_resolution); the headless platform (window.cpp) has fallbacks
 static const DWORD kGameWindowStyle = 0x80C80000;   // WS_POPUP | WS_CAPTION | WS_SYSMENU: the bordered window CreateGameWindow makes
+static int g_dispMode;                // port_platform_apply_display: 0 windowed, 1 borderless, 2 exclusive
+static DEVMODEW g_exclusiveMode;      // the display mode of 2
+static DEVMODEW g_desktopMode;        // the mode before 2 changed it, restored as is (the registry's can be a stale other one)
+
+// The desktop's display mode: while exclusive full screen has changed it, the one the display returns to.
+static bool desktopMode(DEVMODEW *dm)
+{
+	if (g_dispMode == 2) { *dm = g_desktopMode; return dm->dmPelsWidth && dm->dmPelsHeight; }
+	memset(dm, 0, sizeof *dm);
+	dm->dmSize = sizeof *dm;
+	return EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, dm) && dm->dmPelsWidth && dm->dmPelsHeight;
+}
 
 // Per-monitor DPI awareness (Windows 10 1703+, else system aware), before any window exists: sizes and display queries are then
 // physical pixels, not DWM-scaled ones.
@@ -110,9 +126,7 @@ extern "C" int port_platform_display_scale(float *scale)
 extern "C" int port_platform_desktop_size(int *w, int *h)
 {
 	DEVMODEW dm;
-	memset(&dm, 0, sizeof dm);
-	dm.dmSize = sizeof dm;
-	if (!EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &dm) || dm.dmPelsWidth == 0 || dm.dmPelsHeight == 0) return 0;
+	if (!desktopMode(&dm)) return 0;
 	*w = (int)dm.dmPelsWidth; *h = (int)dm.dmPelsHeight;
 	return 1;
 }
@@ -128,6 +142,11 @@ extern "C" int port_platform_work_area(int *w, int *h, int *frameW, int *frameH)
 	RECT fr = { 0, 0, 0, 0 };
 	AdjustWindowRect(&fr, kGameWindowStyle, FALSE);
 	*w = mi.rcWork.right - mi.rcWork.left; *h = mi.rcWork.bottom - mi.rcWork.top;
+	DEVMODEW dm;
+	if (g_dispMode == 2 && desktopMode(&dm)) {   // the desktop's work area: its size less what the task bar takes now
+		*w = (int)dm.dmPelsWidth - ((mi.rcMonitor.right - mi.rcMonitor.left) - *w);
+		*h = (int)dm.dmPelsHeight - ((mi.rcMonitor.bottom - mi.rcMonitor.top) - *h);
+	}
 	*frameW = fr.right - fr.left; *frameH = fr.bottom - fr.top;
 	return *w > 0 && *h > 0;
 }
@@ -145,14 +164,114 @@ extern "C" int port_platform_screen_size(int *w, int *h)
 	return *w > 0 && *h > 0;
 }
 
-// The D3D9 back buffer follows the window only at device creation: no display changes at run time.
-extern "C" int port_platform_display_modes(int *wh, int max) { (void)wh; (void)max; return 0; }
-extern "C" int port_platform_apply_display(int mode, int w, int h) { (void)mode; (void)w; (void)h; return 0; }
+// ---- display changes at run time (platform.h): the window's style and size. librw resets the D3D9 device to the new client size at
+// the next camera update, the camera rasters follow through port_camera_resize (rwcore.cpp). Exclusive full screen is a display mode
+// change (ChangeDisplaySettingsEx) under the borderless window, not an exclusive device; the desktop mode comes back while the game
+// is in the background (WM_ACTIVATEAPP in portWndProc).
+extern "C" int port_platform_display_modes(int *wh, int max)
+{
+	DEVMODEW dm;
+	int n = 0;
+	for (DWORD i = 0; ; i++) {
+		memset(&dm, 0, sizeof dm);
+		dm.dmSize = sizeof dm;
+		if (!EnumDisplaySettingsW(NULL, i, &dm)) break;
+		if (dm.dmBitsPerPel != 32) continue;
+		int w = (int)dm.dmPelsWidth, h = (int)dm.dmPelsHeight, k = 0;
+		while (k < n && !(wh[2 * k] == w && wh[2 * k + 1] == h)) k++;
+		if (k == n && n < max) { wh[2 * n] = w; wh[2 * n + 1] = h; n++; }
+	}
+	return n;
+}
+// The 32-bit mode of w x h nearest the desktop's refresh rate.
+static bool findMode(int w, int h, DEVMODEW *out)
+{
+	DEVMODEW desk, dm;
+	int want = desktopMode(&desk) ? (int)desk.dmDisplayFrequency : 60, best = -1;
+	for (DWORD i = 0; ; i++) {
+		memset(&dm, 0, sizeof dm);
+		dm.dmSize = sizeof dm;
+		if (!EnumDisplaySettingsW(NULL, i, &dm)) break;
+		if (dm.dmBitsPerPel != 32 || (int)dm.dmPelsWidth != w || (int)dm.dmPelsHeight != h) continue;
+		int diff = abs((int)dm.dmDisplayFrequency - want);
+		if (best < 0 || diff < best) { best = diff; *out = dm; }
+	}
+	if (best < 0) return false;
+	out->dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+	return true;
+}
+static void monitorRect(RECT *r, bool work)
+{
+	MONITORINFO mi;
+	memset(&mi, 0, sizeof mi);
+	mi.cbSize = sizeof mi;
+	GetMonitorInfoW(MonitorFromWindow((HWND)g_mainWnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+	*r = work ? mi.rcWork : mi.rcMonitor;
+}
+static void restoreDesktop(void) { ChangeDisplaySettingsExW(NULL, &g_desktopMode, NULL, 0, NULL); }
+static void setBorderless(void)
+{
+	HWND hw = (HWND)g_mainWnd;
+	RECT m;
+	monitorRect(&m, false);
+	SetWindowLongPtrA(hw, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+	SetWindowLongPtrA(hw, GWL_EXSTYLE, 0);
+	SetWindowPos(hw, HWND_TOP, m.left, m.top, m.right - m.left, m.bottom - m.top, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+}
+static void setWindowed(int w, int h)
+{
+	HWND hw = (HWND)g_mainWnd;
+	RECT rc = { 0, 0, w, h }, wa;
+	AdjustWindowRect(&rc, kGameWindowStyle, FALSE);
+	int cx = rc.right - rc.left, cy = rc.bottom - rc.top;
+	monitorRect(&wa, true);
+	SetWindowLongPtrA(hw, GWL_STYLE, kGameWindowStyle | WS_VISIBLE);
+	SetWindowLongPtrA(hw, GWL_EXSTYLE, 0);
+	SetWindowPos(hw, HWND_NOTOPMOST, wa.left + (wa.right - wa.left - cx) / 2, wa.top + (wa.bottom - wa.top - cy) / 2, cx, cy, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+}
+extern "C" int port_platform_apply_display(int mode, int w, int h)
+{
+	if (!g_mainWnd || mode < 0 || mode > 2) return 0;
+	bool ok = true;
+	if (mode == 2) {
+		DEVMODEW dm;
+		if (g_dispMode != 2) desktopMode(&g_desktopMode);
+		ok = findMode(w, h, &dm) && ChangeDisplaySettingsExW(NULL, &dm, NULL, CDS_FULLSCREEN, NULL) == DISP_CHANGE_SUCCESSFUL;
+		if (ok) { g_exclusiveMode = dm; setBorderless(); }
+	} else {
+		if (g_dispMode == 2) restoreDesktop();
+		if (mode == 1) setBorderless();
+		else if (w > 0 && h > 0) setWindowed(w, h);
+		else ok = false;
+	}
+	RECT cr = { 0, 0, 0, 0 };
+	GetClientRect((HWND)g_mainWnd, &cr);
+	if (ok && mode != 1 && (abs(cr.right - w) > 1 || abs(cr.bottom - h) > 1)) ok = false;
+	if (ok) g_dispMode = mode;   // g_wndWindowed stays 1: this backend owns the window (GameWndProc's WM_SETFOCUS would maximise it)
+	if (port_log) fprintf(port_log, "window_w32: apply display mode %d %dx%d -> %s, client %ldx%ld\n", mode, w, h, ok ? "ok" : "FAILED", cr.right, cr.bottom);
+	return ok;
+}
+// Exclusive full screen in the background: the desktop's mode while another application is in front, the game's when it returns.
+static void exclusiveFocus(bool active)
+{
+	if (g_dispMode != 2) return;
+	if (active) {
+		ChangeDisplaySettingsExW(NULL, &g_exclusiveMode, NULL, CDS_FULLSCREEN, NULL);
+		setBorderless();
+	} else {
+		restoreDesktop();
+	}
+}
 
 int CreateGameWindow(const char *cls, const char *title, int x, int y, int w, int h, void *wndProc, void *hInst, int icon, bool fullscreen)
 {
+#ifdef ZOOSTERS_OPTIONS
+	int wmode = port_window_mode();   // the window is made bordered, then port_platform_apply_display sets the stored mode
+	fullscreen = 0;
+#else
 	const char *fs = getenv("PORT_FULLSCREEN");
 	if (!(fs && fs[0] == '1')) fullscreen = 0;
+#endif
 	// the port's window is bordered: tell the game, or GameWndProc's WM_SETFOCUS maximises it (ShowWindow 3) and librw resizes
 	// the back buffer to the desktop while the camera's Z raster keeps the video mode size (a smaller depth-stencil surface: the
 	// D3D9 driver dropped every triangle draw)
@@ -184,6 +303,14 @@ int CreateGameWindow(const char *cls, const char *title, int x, int y, int w, in
 	g_mainWnd = CreateWindowExA(exStyle, cls, title, style, x, y, cx, cy, 0, 0, (HINSTANCE)hInst, 0);
 	if (port_log) fprintf(port_log, "window_w32: CreateGameWindow(class=%s title=%s %dx%d fullscreen=%d) -> hwnd %p (err %lu)\n", cls, title, w, h, fullscreen, g_mainWnd, GetLastError());
 	if (g_mainWnd) {
+#ifdef ZOOSTERS_OPTIONS
+		if (wmode == 2 && !port_platform_apply_display(2, w, h)) {
+			if (port_log) fprintf(port_log, "window_w32: exclusive full screen %dx%d unavailable, borderless instead\n", w, h);
+			port_platform_apply_display(1, 0, 0);
+		} else if (wmode == 1) {
+			port_platform_apply_display(1, 0, 0);
+		}
+#endif
 		// the windowed mode the game picks must be the client size (Settings\Display\Resolution), or its camera rasters keep the
 		// shim's 800x600 and draw into a corner
 		RECT cr;
