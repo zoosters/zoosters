@@ -724,7 +724,17 @@ extern "C" RwRasterS *RwRasterUnlock(RwRasterS *r)
 }
 #else
 extern "C" unsigned char *RwRasterLock(RwRasterS *r, unsigned char level, int mode) { PORT_HEAPCHK("RwRasterLock"); return r->lock(level, mode); }
-extern "C" RwRasterS *RwRasterUnlock(RwRasterS *r) { PORT_HEAPCHK("RwRasterUnlock"); r->unlock(0); return r; }
+#ifdef RW_D3D9
+extern "C" void port_d3d_camtex_writeback(rw::Raster *r, int level);   // rwrender.cpp: librw drops what is written to a camera texture lock
+#endif
+extern "C" RwRasterS *RwRasterUnlock(RwRasterS *r)
+{ PORT_HEAPCHK("RwRasterUnlock");
+#ifdef RW_D3D9
+	if ((r->type & 0x7f) == rw::Raster::CAMERATEXTURE && (r->privateFlags & rw::Raster::PRIVATELOCK_WRITE)) port_d3d_camtex_writeback(r, 0);
+#endif
+	r->unlock(0);
+	return r;
+}
 #endif
 extern "C" RwRasterS *RwRasterPushContext(RwRasterS *r) { PORT_HEAPCHK("RwRasterPushContext"); return rw::Raster::pushContext(r); }
 extern "C" RwRasterS *RwRasterPopContext(void) { PORT_HEAPCHK("RwRasterPopContext"); return rw::Raster::popContext(); }

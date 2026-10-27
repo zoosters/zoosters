@@ -243,6 +243,21 @@ extern "C" int RwIm3DRenderTriangle(int a, int b, int c) { PORT_HEAPCHK("RwIm3DR
 static IDirect3DDevice9 *dev(void) { return rw::d3d::d3ddevice; }
 // d3dcap (port/shim/d3dcap.cpp): the device, and the name of the RW texture behind a d3d9 texture pointer
 extern "C" void *port_d3d_device(void) { return rw::d3d::d3ddevice; }
+// A camera texture locked for writing (the movie frame, video.cpp): librw locks it through a system-memory copy of the render target
+// and drops the copy at unlock, so what the game wrote is uploaded here first (RwRasterUnlock, rwcore.cpp). UpdateSurface wants the
+// source unlocked: it is locked again for librw's unlock.
+extern "C" void port_d3d_camtex_writeback(rw::Raster *r, int level)
+{
+	rw::d3d::D3dRaster *nat = GETD3DRASTEREXT(r);
+	IDirect3DSurface9 *sys = (IDirect3DSurface9 *)nat->lockedSurf, *rt = 0;
+	if (!dev() || !sys || !nat->texture || FAILED(((IDirect3DTexture9 *)nat->texture)->GetSurfaceLevel(level, &rt))) return;
+	sys->UnlockRect();
+	HRESULT hr = dev()->UpdateSurface(sys, 0, rt, 0);
+	D3DLOCKED_RECT lr;
+	sys->LockRect(&lr, 0, 0);
+	rt->Release();
+	static int logged; if (FAILED(hr) && logged++ < 3) RLOG("rwrender: camera texture %p write-back failed (%08lx)\n", (void *)r, (unsigned long)hr);
+}
 extern "C++" void port_for_each_texture(void (*cb)(rw::Texture *, void *), void *ud);
 struct D3dCapFind { void *d3d; const char *name; };
 static void d3dcapFindCb(rw::Texture *t, void *ud)
