@@ -144,6 +144,12 @@ struct TwoDVariableView : UserReference {
 #define TWOD_X(o) (((TwoDVariableView *)(o))->X())
 #define TWOD_Y(o) (((TwoDVariableView *)(o))->Y())
 
+// R / G / B / A: likewise the user variable's m_data bytes (game: owner +0x1c..0x1f; on x64 a ColorMeasurement cast hit m_object)
+struct ColorVariableView : UserReference {
+	unsigned char &C(int i) { return ((unsigned char *)&m_data)[i]; }
+};
+#define COLOR_C(o, i) (((ColorVariableView *)(o))->C(i))
+
 // 0x43e2a0
 int TwoDMeasurement::ExposeX::GetInt(ScriptReference *owner)
 {
@@ -171,49 +177,49 @@ void TwoDMeasurement::ExposeY::SetValue(int value, ScriptReference *owner)
 // 0x43e220
 int ColorMeasurement::ExposeR::GetInt(ScriptReference *owner)
 {
-	return ((ColorMeasurement *)owner)->m_r;
+	return COLOR_C(owner, 0);
 }
 
 // 0x43e230
 void ColorMeasurement::ExposeR::SetValue(int value, ScriptReference *owner)
 {
-	((ColorMeasurement *)owner)->m_r = (unsigned char)value;
+	COLOR_C(owner, 0) = (unsigned char)value;
 }
 
 // 0x43e240
 int ColorMeasurement::ExposeG::GetInt(ScriptReference *owner)
 {
-	return ((ColorMeasurement *)owner)->m_g;
+	return COLOR_C(owner, 1);
 }
 
 // 0x43e250
 void ColorMeasurement::ExposeG::SetValue(int value, ScriptReference *owner)
 {
-	((ColorMeasurement *)owner)->m_g = (unsigned char)value;
+	COLOR_C(owner, 1) = (unsigned char)value;
 }
 
 // 0x43e260
 int ColorMeasurement::ExposeB::GetInt(ScriptReference *owner)
 {
-	return ((ColorMeasurement *)owner)->m_b;
+	return COLOR_C(owner, 2);
 }
 
 // 0x43e270
 void ColorMeasurement::ExposeB::SetValue(int value, ScriptReference *owner)
 {
-	((ColorMeasurement *)owner)->m_b = (unsigned char)value;
+	COLOR_C(owner, 2) = (unsigned char)value;
 }
 
 // 0x43e280
 int ColorMeasurement::ExposeA::GetInt(ScriptReference *owner)
 {
-	return ((ColorMeasurement *)owner)->m_a;
+	return COLOR_C(owner, 3);
 }
 
 // 0x43e290
 void ColorMeasurement::ExposeA::SetValue(int value, ScriptReference *owner)
 {
-	((ColorMeasurement *)owner)->m_a = (unsigned char)value;
+	COLOR_C(owner, 3) = (unsigned char)value;
 }
 
 // 0x430350
