@@ -334,14 +334,25 @@ extern "C" int port_platform_client_size(int *w, int *h)
 	return 0;
 }
 
-// A key's DIK code is its scan code; extended keys (E0 prefix) carry bit 7, as DirectInput reports them.
+// A key's DIK code is its scan code; extended keys (E0 prefix) carry bit 7, as DirectInput reports them. MAPVK_VK_TO_VSC_EX marks only
+// some of them (right Ctrl / Alt): the arrows, Insert / Delete / Home / End / Page Up / Down come back as the keypad's codes
+// (VK_UP -> 0x48, DIK_NUMPAD8, not DIK_UP 0xC8: the menus' arrow bindings never fired), so those virtual keys are extended here.
+static bool extendedVk(int vk)
+{
+	switch (vk) {
+	case VK_PRIOR: case VK_NEXT: case VK_END: case VK_HOME: case VK_LEFT: case VK_UP: case VK_RIGHT: case VK_DOWN:
+	case VK_INSERT: case VK_DELETE: case VK_DIVIDE: case VK_NUMLOCK: case VK_RCONTROL: case VK_RMENU: case VK_LWIN: case VK_RWIN: case VK_APPS:
+		return true;
+	}
+	return false;
+}
 extern "C" void port_platform_keyboard(unsigned char *cur)
 {
 	for (int vk = 8; vk < 0xff; vk++) {
 		if (vk == 0x10 || vk == 0x11 || vk == 0x12) continue;   // VK_SHIFT / CONTROL / MENU: the left / right keys report themselves
 		if (GetAsyncKeyState(vk) & 0x8000) {
-			unsigned sc = MapVirtualKeyA(vk, 4);   // MAPVK_VK_TO_VSC_EX: 0xE0xx for extended keys
-			unsigned dik = (sc & 0x7f) | ((sc & 0xff00) == 0xe000 ? 0x80 : 0);
+			unsigned sc = MapVirtualKeyA(vk, 4);   // MAPVK_VK_TO_VSC_EX: 0xE0xx for (some) extended keys
+			unsigned dik = (sc & 0x7f) | ((sc & 0xff00) == 0xe000 || extendedVk(vk) ? 0x80 : 0);
 			if (sc & 0x7f) cur[dik] = 0x80;
 		}
 	}
