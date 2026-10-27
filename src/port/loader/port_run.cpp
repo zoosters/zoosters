@@ -22,6 +22,8 @@ __declspec(dllimport) int __stdcall SetCurrentDirectoryA(const char *path);
 __declspec(dllimport) void *__stdcall GetModuleHandleA(const char *name);
 __declspec(dllimport) int __stdcall CreateDirectoryA(const char *path, void *sa);
 __declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *name, const char *value);
+__declspec(dllimport) unsigned long __stdcall GetConsoleProcessList(unsigned long *list, unsigned long count);
+__declspec(dllimport) int __stdcall FreeConsole(void);
 #endif
 void port_install_fault_handler(void);
 void port_win_set_frames(int n);
@@ -238,29 +240,32 @@ static void *port_module_base(void) { return GetModuleHandleA(0); }
 static void port_absolute(char *, size_t) {}   // Windows: argv[0] is the exe's full path
 #endif
 
-#ifdef ZOOSTERS_OS_SDL
 extern "C" int port_player_game_dir(char *out, int size);   // port/loader/player_launch.cpp
 extern "C" int port_player_mod_dir(char *out, int size);
 extern "C" int port_user_file(const char *name, char *buf, int size);   // port/provisional/userdir.cpp
 extern "C" int port_make_dirs(const char *path);
-#endif
 
 int main(int argc, char **argv)
 {
 	bool player = false;
-#ifdef ZOOSTERS_OS_SDL
-	// Player launch (no arguments: Finder, the .app bundle): the game folder from player_launch.cpp, no frame limit, the OS user folder
-	// (`u`), the log in that folder (not next to the exe: inside a bundle), the bundle's mod files.
+	// Player launch (no arguments: Finder, Explorer, the .app bundle): the game folder from player_launch.cpp, no frame limit, the OS
+	// user folder (`u`), the log in that folder (not next to the exe: inside a bundle), the bundled mod files.
 	static char playerDir[1024];
 	static char *playerArgv[5];
 	if (argc < 2) {
+#ifndef ZOOSTERS_OS_SDL
+		// the console exe (scripted runs print to it) started from Explorer has a console of its own: let it go, the game has a window
+		unsigned long procs[2];
+		if (GetConsoleProcessList(procs, 2) == 1) FreeConsole();
+#endif
 		if (!port_player_game_dir(playerDir, sizeof playerDir)) return 2;
 		playerArgv[0] = argv[0]; playerArgv[1] = playerDir; playerArgv[2] = (char *)"0"; playerArgv[3] = (char *)"u"; playerArgv[4] = 0;
 		argv = playerArgv; argc = 4;
 		player = true;
 		char mod[1024];
-		if (!getenv("PORT_MOD_DIR") && port_player_mod_dir(mod, sizeof mod)) { std::string kv = std::string("PORT_MOD_DIR=") + mod; putenv(strdup(kv.c_str())); }
+		if (!getenv("PORT_MOD_DIR") && port_player_mod_dir(mod, sizeof mod)) { std::string kv = std::string("PORT_MOD_DIR=") + mod; port_putenv(kv.c_str()); }
 	}
+#ifdef ZOOSTERS_OS_SDL
 	// a scripted run (fixture, tests: started with arguments) runs in the background: no focus, no Dock icon (window_sdl.cpp);
 	// PORT_BACKGROUND=0 keeps it in front
 	if (!player && !getenv("PORT_BACKGROUND")) putenv((char *)"PORT_BACKGROUND=1");
@@ -280,13 +285,11 @@ int main(int argc, char **argv)
 		char *sl = port_last_sep(path);
 		{ char *dot = strrchr(sl ? sl + 1 : path, '.'); if (dot) *dot = 0; }      // <exe name>.log next to the exe
 		strcat(path, ".log");
-#ifdef ZOOSTERS_OS_SDL
 		if (player && port_user_file("port.log", path, sizeof path)) {             // player launch: <user folder>/Activision/Madagascar/port.log
 			char dir[512]; strcpy(dir, path);
 			char *ds = port_last_sep(dir); if (ds) { *ds = 0; port_make_dirs(dir); }
 			sl = port_last_sep(path);
 		}
-#endif
 		log = fopen(path, "w");
 		if (log) setvbuf(log, NULL, _IONBF, 0);
 		port_log = log;
