@@ -308,6 +308,17 @@ static bool IsHudName(const char *name)
 		if (strncmp(name, hud[i], strlen(hud[i])) == 0) return true;
 	return false;
 }
+// Side panels outside that list, not HUD-scaled: the golf scoreboard, the shuffleboard score columns, the rave's score meter, the
+// ring goal text, the dev build's fps and build lines. Every other named sprite keeps the centred 4:3 layout: a box near x 160 / 480
+// is no sign of a side panel (the rave's outer catchers, the shuffleboard power bar against its frame, the map's place labels).
+static bool IsEdgeName(const char *name)
+{
+	static const char *const edge[] = { "#: ", "Words: ", "Golfer_", "HUD_Alex", "HUD_heads_bkgnd", "hole_info_bkgnd", "UIpuck-",
+		"Score_Meter_", "BlackBar", "Bar_Line", "SP_HUB_", "Jump Through Rings", "bx_fps", "bx_build" };
+	for (unsigned i = 0; i < sizeof edge / sizeof edge[0]; i++)
+		if (strncmp(name, edge[i], strlen(edge[i])) == 0) return true;
+	return strncmp(name, "Number", 6) == 0 && strstr(name, "NINE");   // shuffleboard scores: Number1NINE .. Number9blueNINE
+}
 // The side edge a box sits next to: left of 160 = left, right of 480 = right, both or neither = centre.
 static int EdgeMode(float left, float right)
 {
@@ -331,7 +342,8 @@ extern "C" void port_wide2d_sprite(const char *name, float left, float width, fl
 	bool hud = name && IsHudName(name);
 	bool onMenuPage = g_menuActive && !hud;
 	if (width >= 600.0f) g_wideMode = WIDE_STRETCH;
-	else g_wideMode = onMenuPage ? WIDE_CENTER : EdgeMode(left, right);
+	else if (hud || (!onMenuPage && (!name || IsEdgeName(name)))) g_wideMode = EdgeMode(left, right);   // unnamed: children in HUD groups, the radar
+	else g_wideMode = WIDE_CENTER;
 	// HUD scale: not menus, full-width elements or the pointer (returned above). The anchor comes from port_wide2d_anchor (the
 	// group's root), else from this element.
 	if (onMenuPage || g_wideMode == WIDE_STRETCH || height <= 0.0f || (name && !hud)) return;
