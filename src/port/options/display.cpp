@@ -86,6 +86,18 @@ void rebuild(bool keepCurrent)
 			if (aw > 0 && (w > aw || h > ah)) continue;
 			g_codes[g_count++] = code(w, h);
 		}
+		// A window takes any size, and a display often lists only its own aspect (every mode of a Mac is 16:10): the common 4:3,
+		// 16:10 and 16:9 sizes too, 4:3 for the game's own layout.
+		static const short kWindowSizes[][2] = { { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1152, 864 }, { 1280, 960 }, { 1400, 1050 },
+			{ 1600, 1200 }, { 1920, 1440 }, { 2048, 1536 }, { 1280, 800 }, { 1440, 900 }, { 1680, 1050 }, { 1920, 1200 }, { 2560, 1600 },
+			{ 1280, 720 }, { 1600, 900 }, { 1920, 1080 }, { 2560, 1440 }, { 3840, 2160 } };
+		if (g_want.mode == opt_display::MODE_WINDOWED && aw > 0)
+			for (unsigned i = 0; i < sizeof kWindowSizes / sizeof kWindowSizes[0] && g_count < kMaxModes; i++) {
+				int c = code(kWindowSizes[i][0], kWindowSizes[i][1]), k = 1;
+				if (kWindowSizes[i][0] > aw || kWindowSizes[i][1] > ah) continue;
+				while (k < g_count && g_codes[k] != c) k++;
+				if (k == g_count) g_codes[g_count++] = c;
+			}
 		for (int i = 1; i < g_count; i++)   // ascending by width, then height
 			for (int j = i; j > 1 && g_codes[j - 1] > g_codes[j]; j--) { int t = g_codes[j]; g_codes[j] = g_codes[j - 1]; g_codes[j - 1] = t; }
 		bool listed = false;
