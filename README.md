@@ -12,8 +12,10 @@
 
 ## Getting started
 1. Install the original PC game
-2. Download Zoosters
-3. Put it in the folder with the original game and start it
+2. Download Zoosters and `Zoosters-Mod.zip`
+3. Put Zoosters in the game folder, unzip the Mod zip there and start it
+
+Linux: add OpenAL with `sudo apt install libopenal1`.
 
 ## Features
 - **Widescreen and ultrawide** without stretching, at any resolution
