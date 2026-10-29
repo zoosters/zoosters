@@ -269,14 +269,24 @@ void wdDecodeXboxIma(const unsigned char *f, int ch, short *out)
 			}
 		}
 }
+unsigned wdFrameBytes(const WdRws *r, int *pcm)
+{
+	if (pcm) *pcm = 0;
+	if (!r) return 0;
+	unsigned ch = r->fmt.channels ? r->fmt.channels : 1;
+	const unsigned char *t = r->fmt.hasType ? r->fmt.type : 0;
+	if (t && (!memcmp(t, kIMA, 16) || !memcmp(t, kXADPCM, 16))) return 36u * ch;
+	if ((!t || !memcmp(t, kPCM, 16)) && r->fmt.bits == 16) { if (pcm) *pcm = 1; return 128u * ch; }
+	return 0;
+}
 unsigned wdSegmentFrames(const WdRws *r, int seg)
 {
-	unsigned fb = 36u * (r && r->fmt.channels ? r->fmt.channels : 1);
-	return r && seg >= 0 && (unsigned)seg < r->nseg ? r->segs[seg].codecBytes / fb : 0;
+	unsigned fb = wdFrameBytes(r, 0);
+	return fb && seg >= 0 && (unsigned)seg < r->nseg ? r->segs[seg].codecBytes / fb : 0;   // a PCM tail under 64 samples is dropped
 }
 long wdFrameOffset(const WdRws *r, int seg, unsigned k)
 {
-	unsigned fb = 36u * (r && r->fmt.channels ? r->fmt.channels : 1), per = r && r->codecPerBlock ? r->codecPerBlock / fb : 0;
+	unsigned fb = wdFrameBytes(r, 0), per = fb && r->codecPerBlock ? r->codecPerBlock / fb : 0;
 	if (!per || k >= wdSegmentFrames(r, seg)) return -1;
 	return (long)(r->dataOffset + r->segs[seg].offset + k / per * r->blockSize + k % per * fb);
 }

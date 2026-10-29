@@ -265,7 +265,7 @@ static float blockEnd(const WdRws *r, int seg)
 	unsigned ch = r && r->fmt.channels ? r->fmt.channels : 1;
 	if (!r || !r->blockSize || !r->codecPerBlock || !r->fmt.rate || !r->samplesPerFrame) return 0.0f;
 	unsigned blocks = (r->segs[seg].size + r->blockSize - 1) / r->blockSize;
-	double block = (double)(r->codecPerBlock / (36u * ch)) * r->samplesPerFrame / r->fmt.rate;
+	double block = (double)(r->codecPerBlock / ((r->frameSize ? r->frameSize : 36u) * ch)) * r->samplesPerFrame / r->fmt.rate;
 	return (float)(blocks * block + kEndLatency);
 }
 static float segSeconds(const WdRws *r, int seg) { return r && r->fmt.rate ? (float)wdSegmentSamples(r, seg) / (float)(int)r->fmt.rate : 0.0f; }

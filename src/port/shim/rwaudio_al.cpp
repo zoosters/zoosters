@@ -375,17 +375,18 @@ void alaStreamDrop(void *key)
 static bool streamFill(StreamSrc *s, ALuint buf)
 {
 	const WdRws *r = s->rws;
-	int ch = r->fmt.channels ? r->fmt.channels : 1;
-	unsigned fbytes = 36u * ch;
-	if (!s->f || !s->totalFrames) return false;
+	int ch = r->fmt.channels ? r->fmt.channels : 1, isPcm = 0;
+	unsigned fbytes = wdFrameBytes(r, &isPcm);
+	if (!s->f || !s->totalFrames || !fbytes || fbytes > 256) return false;
 	static short pcm[kChunkFrames * 64 * 2];
-	unsigned char fr[72];
+	unsigned char fr[256];
 	unsigned n = 0;
 	while (n < kChunkFrames) {
 		if (s->cursor >= s->totalFrames) { if (!s->loop) break; s->cursor = 0; }
 		long off = wdFrameOffset(r, s->seg, s->cursor);
 		if (off < 0 || fseek(s->f, off, SEEK_SET) || fread(fr, 1, fbytes, s->f) != fbytes) { s->totalFrames = s->cursor; break; }
-		wdDecodeXboxIma(fr, ch, pcm + n * 64 * ch);
+		if (isPcm) memcpy(pcm + n * 64 * ch, fr, fbytes);
+		else wdDecodeXboxIma(fr, ch, pcm + n * 64 * ch);
 		n++; s->cursor++;
 	}
 	if (!n) return false;

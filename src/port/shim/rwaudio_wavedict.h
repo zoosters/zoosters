@@ -60,7 +60,10 @@ unsigned wdSamples(const unsigned char *type, unsigned bits, unsigned channels, 
 // One 36 x channels byte frame (Xbox IMA ADPCM: per channel s16 first sample, u8 step index, u8 0, then u32 nibble words L/R in turn)
 // -> 64 samples per channel, interleaved (_rwaWaveConvXADPCMDecodeMono/Stereo 0x517910/0x517ac0).
 void wdDecodeXboxIma(const unsigned char *frame, int channels, short *out);
-// Codec frames (36 x channels bytes) of segment `seg`, and the file offset of frame `k` (blocks of blockSize, the first codecPerBlock
+// Bytes of one 64-sample frame of all channels: 36 x channels for Xbox IMA ADPCM, 128 x channels for 16-bit PCM, 0 for other
+// codecs. *pcm = 1 for PCM.
+unsigned wdFrameBytes(const WdRws *r, int *pcm);
+// Frames (wdFrameBytes) of segment `seg`, and the file offset of frame `k` (blocks of blockSize, the first codecPerBlock
 // bytes of each are frames; seek as 0x514490: dataOffset + segment offset + block x blockSize). -1 / 0 if out of range.
 unsigned wdSegmentFrames(const WdRws *r, int seg);
 long wdFrameOffset(const WdRws *r, int seg, unsigned k);
