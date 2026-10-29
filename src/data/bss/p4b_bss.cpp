@@ -977,7 +977,7 @@ unsigned int g_memCardLastTick = 0;
 
 // GLOBAL: 0x626554 g_langIndex
 // ALONE: DAT_00626554 used by name only
-int g_langIndex = 0;
+int g_langIndex = 3;
 
 // GLOBAL: 0x626560 g_pairPool
 // ALONE: g_pairPool used by name only
